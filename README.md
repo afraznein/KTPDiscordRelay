@@ -17,7 +17,7 @@ The relay simply passes along API calls (e.g. fetching channel messages, posting
 
 **Stateless operation:** Each request is independent / asynchronous; no sessions or background processes are maintained.
 
-**Transparent forwarding: **Request bodies and responses are forwarded between Google Apps Script and Discord with minimal transformation.
+**Transparent forwarding:** Request bodies and responses are forwarded between Google Apps Script and Discord with minimal transformation.
 
 **🪶 Design Philosophy**
 
