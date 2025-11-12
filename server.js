@@ -542,7 +542,7 @@ app.post('/dm', requireAuth, async (req, res) => {
 
     let message = {};
     try { message = JSON.parse(msgText); } catch {}
-    return res.status(200).json({ ok: true, id: message.id || null });
+    return res.status(200).json({ ok: true, id: message.id || null, channelId: dmChan.id || null });
   } catch (e) {
     console.error(`${ts()} POST /dm relay error:`, e);
     return res.status(500).json({ ok: false, error: String(e) });
