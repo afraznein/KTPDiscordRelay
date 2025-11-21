@@ -1,84 +1,135 @@
-`KTP Discord Relay server.js` – **Lightweight HTTP Relay Server**
+# KTP Discord Relay
 
-The `server.js` file implements a lightweight Node.js / Express HTTP relay for the **KTP Score Parser** project.
-Its primary role is to forward HTTP requests from the project’s **Google Apps Script** environment to the **Discord API V10**, acting as a simple proxy.
-This design helps circumvent Cloudflare challenges and **CORS (Cross-Origin Resource Sharing)** restrictions that would otherwise block direct requests from Google Apps Script to Discord.
+**Lightweight HTTP Relay Server for KTP Competitive Infrastructure**
 
-**🔧 Purpose**
+A Node.js/Express HTTP relay that forwards requests from various KTP services to the Discord API V10, acting as a simple, stateless proxy. This design helps circumvent Cloudflare challenges and CORS restrictions while providing a secure bridge between game servers and Discord.
 
-Enables Google Apps Script (the score parser) to communicate with Discord by forwarding requests — effectively bypassing Cloudflare and CORS issues on direct calls.
-The relay simply passes along API calls (e.g. fetching channel messages, posting replies, or adding reactions) to Discord and returns the results.
+---
 
-**🧠 Core Behavior**
+## 🎯 Purpose
 
-**No caching:** The relay does not cache or persist data. Every request is passed directly to Discord in real time.
+The KTP Discord Relay enables multiple KTP services to communicate with Discord:
 
-**Minimal authentication:** The server performs a lightweight token check via an X-Relay-Auth header but does not handle logins, OAuth, or complex permission systems.
+1. **KTP Match Handler** (AMX ModX plugin) - Real-time match notifications
+   - Pause/unpause events
+   - Match start/end notifications
+   - Player disconnect alerts
+   - Technical pause warnings
 
-**Stateless operation:** Each request is independent / asynchronous; no sessions or background processes are maintained.
+2. **KTP Score Parser** (Google Apps Script) - Post-match statistics
+   - Score updates
+   - Player statistics
+   - Match results
 
-**Transparent forwarding:** Request bodies and responses are forwarded between Google Apps Script and Discord with minimal transformation.
+3. **KTPScoreBot-WeeklyMatches** (Google Apps Script) - Weekly match tracking
+   - Match scheduling
+   - Weekly recaps
+   - Leaderboard updates
+   - Historical statistics
 
-**🪶 Design Philosophy**
+The relay acts as a proxy, forwarding API calls (fetching channel messages, posting replies, adding reactions) to Discord and returning the results.
 
-This relay is intentionally minimal.
-All business logic — including message parsing, score updates, alias resolution, and logging — lives inside the Google Apps Script codebase.
-The relay’s only purpose is to transmit requests and responses between Google Apps Script and the Discord API reliably and securely, without altering data.
+---
 
-An example of how to deploy to gcloud (how I currently run this):
+## 🧠 Core Behavior
 
-**Deploying `server.js` to Google Cloud Run (via `gcloud`)**
+**✅ Stateless Operation**
+- Each request is independent/asynchronous
+- No sessions or background processes
+- Scales to zero automatically
 
-**Prereqs:**
-- Node/Express relay in this repo (your `server.js` + `package.json`, optional `Dockerfile`)
-- Google Cloud SDK installed (gcloud)
-- A Google Cloud project selected and billing enabled
+**✅ No Caching**
+- Every request is passed directly to Discord in real-time
+- No data persistence or storage
 
-**One-time project setup**
+**✅ Minimal Authentication**
+- Simple shared-secret auth via `X-Relay-Auth` header
+- No complex OAuth or permission systems
+
+**✅ Transparent Forwarding**
+- Request bodies and responses forwarded between clients and Discord
+- Minimal transformation of data
+
+**✅ Automatic Retries**
+- Built-in retry logic with exponential backoff
+- Honors Discord's `Retry-After` headers
+- Handles rate limiting gracefully
+
+---
+
+## 🪶 Design Philosophy
+
+This relay is **intentionally minimal**.
+
+All business logic lives in the client applications:
+- **KTP Match Handler**: Match state tracking, pause logic, event formatting
+- **KTP Score Parser**: Message parsing, score updates, alias resolution, logging
+- **KTPScoreBot-WeeklyMatches**: Match scheduling, weekly recaps, leaderboards
+
+The relay's **only purpose** is to reliably and securely transmit requests and responses between clients and the Discord API **without altering data**.
+
+---
+
+## 🚀 Deployment (Google Cloud Run)
+
+### Prerequisites
+- Node.js relay code (`server.js` + `package.json`)
+- Google Cloud SDK installed (`gcloud`)
+- Google Cloud project with billing enabled
+- Discord bot token
+
+### One-Time Project Setup
+
 ```bash
-# Authenticate and pick your project
+# Authenticate and select your project
 gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
 
 # Enable required services
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com
 ```
-**Choose one of the deployment methods**
-**Option A) Deploy from source (uses Cloud Buildpacks or your Dockerfile automatically)**
 
-This is the simplest—no manual image build step.
+### Deployment Options
+
+#### **Option A: Deploy from Source (Recommended)**
+
+Simplest method—Cloud Run auto-detects your runtime and builds automatically.
+
 ```bash
-# From the repo root (where server.js/package.json live)
+# From the repository root
 gcloud run deploy ktp-relay \
   --source . \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars "RELAY_AUTH=changeme,DISCORD_BOT_TOKEN=your-token-here" \
+  --set-env-vars "RELAY_SHARED_SECRET=your-secret-here,DISCORD_BOT_TOKEN=your-bot-token" \
   --memory 256Mi \
   --concurrency 80 \
   --timeout 30s
 ```
 
-**Replace:**
+**Environment Variables:**
+- `RELAY_SHARED_SECRET` - Shared secret for authenticating relay requests
+- `DISCORD_BOT_TOKEN` - Your Discord bot token
+- `OAUTH_JWT_SECRET` - (Optional) Secret for OAuth state signing
 
-- RELAY_AUTH with the shared secret your Apps Script sends in X-Relay-Auth.
-- DISCORD_BOT_TOKEN with your bot token (don’t commit it to git).
-- Consider removing --allow-unauthenticated and using an HTTPS proxy or IAP if you want stricter access.
+> ⚠️ **Security**: Never commit secrets to git. Use environment variables or Cloud Run's Secrets Manager.
 
-Cloud Run will print the public HTTPS URL on success.
+#### **Option B: Build Container, Then Deploy**
 
-**Option B) Build a container, then deploy**
-
-If you prefer an explicit image step (uses your `Dockerfile`):
+For explicit control over the Docker image:
 
 ```bash
-# Build & push the image (Artifact Registry)
+# Create Artifact Registry repository
 gcloud artifacts repositories create relay-repo \
-  --repository-format=docker --location=us --description="Relay images" || true
+  --repository-format=docker \
+  --location=us \
+  --description="KTP Relay images"
 
+# Configure Docker authentication
 gcloud auth configure-docker us-docker.pkg.dev
 
+# Build and push image
 gcloud builds submit --tag us-docker.pkg.dev/YOUR_PROJECT_ID/relay-repo/ktp-relay:latest .
 
 # Deploy
@@ -87,42 +138,271 @@ gcloud run deploy ktp-relay \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars "RELAY_AUTH=changeme,DISCORD_BOT_TOKEN=your-token-here" \
+  --set-env-vars "RELAY_SHARED_SECRET=your-secret-here,DISCORD_BOT_TOKEN=your-bot-token" \
   --memory 256Mi \
   --concurrency 80 \
   --timeout 30s
 ```
-**Environment variables (examples):**
 
-- RELAY_AUTH — shared secret checked on incoming requests (your Apps Script should send X-Relay-Auth: <value>).
-- DISCORD_BOT_TOKEN — bot token used to call the Discord API.
-- Any optional config you use (e.g., CORS allowlist): CORS_ORIGIN=https://script.google.com
-> Never commit secrets. Prefer storing them as env vars (above) or via Cloud Run > Revisions > Variables & Secrets in the console.
+Cloud Run will print the public HTTPS URL on success (e.g., `https://ktp-relay-xxxxx-uc.a.run.app`).
 
-**Quick test**
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `RELAY_SHARED_SECRET` | ✅ | Shared secret for authenticating relay requests (sent as `X-Relay-Auth` header) |
+| `DISCORD_BOT_TOKEN` | ✅ | Discord bot token for API authentication |
+| `OAUTH_JWT_SECRET` | ⚠️ | Secret for OAuth state signing (only if using OAuth flow) |
+| `PORT` | ❌ | Server port (default: 8080, Cloud Run sets this automatically) |
+
+### Client Configuration
+
+**KTP Match Handler** (`discord.ini`):
+```ini
+discord_relay_url=https://your-relay-xxxxx.run.app/reply
+discord_channel_id=1234567890123456789
+discord_auth_secret=your-secret-here
+```
+
+**KTP Score Parser / KTPScoreBot-WeeklyMatches** (Apps Script):
+```javascript
+const RELAY_URL = 'https://your-relay-xxxxx.run.app/reply';
+const RELAY_AUTH = 'your-secret-here';
+const CHANNEL_ID = '1234567890123456789';
+```
+
+---
+
+## 🧪 Testing
+
+### Health Check
 ```bash
-# Health check (if you exposed one like GET /health)
 curl -s https://YOUR_RUN_URL/health
-
-# Example relay endpoint (adjust to match your server.js routes)
-curl -X POST https://YOUR_RUN_URL/reply \
-  -H "X-Relay-Auth: changeme" \
-  -H "Content-Type: application/json" \
-  -d '{"channelId":"123456789012345678","content":"Hello from Cloud Run!"}'
 ```
-**Locking down access (recommended)**
 
-Instead of `--allow-unauthenticated`, you can:
-
-Require Google-signed identity (Cloud Run IAM) and call with an ID token from Apps Script’s `UrlFetchApp.fetch` (advanced).
-
-Keep unauthenticated but enforce your `X-Relay-Auth` header and optionally restrict IPs via a proxy (e.g., Cloud Armor).
-
-**Operations tips:**
-
-- Scale to zero by default; set min instances if you want instant cold-start performance:
+### Test Reply Endpoint
 ```bash
-gcloud run services update ktp-relay --region us-central1 --min-instances 1
+curl -X POST https://YOUR_RUN_URL/reply \
+  -H "X-Relay-Auth: your-secret-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channelId": "1234567890123456789",
+    "content": "Hello from KTP Discord Relay!"
+  }'
 ```
-- Logs: view with gcloud logs tail --project YOUR_PROJECT_ID --service ktp-relay.
-- Update later: re-run the same gcloud run deploy command after code changes.
+
+### From KTP Match Handler
+The plugin automatically sends requests when match events occur. Check your Discord channel for notifications.
+
+---
+
+## 🔒 Security Best Practices
+
+### Authentication
+
+**Current Setup (Shared Secret):**
+- Simple `X-Relay-Auth` header validation
+- Good for trusted internal services
+- Protects against casual abuse
+
+**Recommended for Production:**
+
+1. **Keep `--allow-unauthenticated` but enforce strong secrets:**
+   - Use a cryptographically random `RELAY_SHARED_SECRET`
+   - Rotate secrets periodically
+   - Monitor access logs
+
+2. **Use Cloud Run IAM (Advanced):**
+   ```bash
+   # Remove --allow-unauthenticated
+   gcloud run deploy ktp-relay \
+     --source . \
+     --region us-central1 \
+     --no-allow-unauthenticated
+
+   # Grant invoker access to service account
+   gcloud run services add-iam-policy-binding ktp-relay \
+     --member="serviceAccount:YOUR_SA@PROJECT.iam.gserviceaccount.com" \
+     --role="roles/run.invoker"
+   ```
+
+3. **Additional Protection:**
+   - Cloud Armor for IP allowlisting
+   - VPC Service Controls
+   - API Gateway with rate limiting
+
+### Secret Management
+
+**Never commit secrets to git:**
+- ✅ Use Cloud Run environment variables
+- ✅ Use Cloud Run Secrets Manager
+- ✅ Use `.env` file (local dev only, add to `.gitignore`)
+- ❌ Don't hardcode in `server.js`
+- ❌ Don't commit to version control
+
+---
+
+## 📊 Operations
+
+### View Logs
+```bash
+gcloud logs tail \
+  --project YOUR_PROJECT_ID \
+  --service ktp-relay
+```
+
+### Update Deployment
+```bash
+# After making code changes, re-run the deploy command
+gcloud run deploy ktp-relay --source . --region us-central1
+```
+
+### Scale Configuration
+
+**Auto-scale (default):**
+- Scales to zero when not in use
+- Scales up based on traffic
+- Cost-effective for intermittent usage
+
+**Keep warm (optional):**
+```bash
+gcloud run services update ktp-relay \
+  --region us-central1 \
+  --min-instances 1
+```
+
+### Resource Limits
+```bash
+gcloud run services update ktp-relay \
+  --region us-central1 \
+  --memory 512Mi \
+  --cpu 1 \
+  --concurrency 100 \
+  --max-instances 10
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────┐
+│  KTP Match Handler      │
+│  (AMX ModX Plugin)      │
+│  - Pause events         │
+│  - Match notifications  │
+└────────┬────────────────┘
+         │
+         │ HTTPS + X-Relay-Auth
+         ↓
+┌─────────────────────────┐      ┌─────────────────────────┐
+│  KTP Discord Relay      │ ←──→ │  Discord API V10        │
+│  (Cloud Run)            │      │  - Channels             │
+│  - Auth validation      │      │  - Messages             │
+│  - Request forwarding   │      │  - Reactions            │
+│  - Retry logic          │      │                         │
+└────────┬────────────────┘      └─────────────────────────┘
+         │
+         │ HTTPS + X-Relay-Auth
+         ↓
+┌─────────────────────────┐         ┌─────────────────────────┐
+│  KTP Score Parser       │         │  KTPScoreBot-           │
+│  (Google Apps Script)   │         │  WeeklyMatches          │
+│  - Match statistics     │         │  (Google Apps Script)   │
+│  - Score updates        │         │  - Weekly recaps        │
+└─────────────────────────┘         │  - Leaderboards         │
+                                     └─────────────────────────┘
+```
+
+---
+
+## 📋 API Endpoints
+
+### `POST /reply`
+Send a message to a Discord channel.
+
+**Headers:**
+- `X-Relay-Auth: <RELAY_SHARED_SECRET>`
+- `Content-Type: application/json`
+
+**Request Body:**
+```json
+{
+  "channelId": "1234567890123456789",
+  "content": "Message text",
+  "embeds": []  // optional
+}
+```
+
+**Response:**
+```json
+{
+  "id": "987654321098765432",
+  "channel_id": "1234567890123456789",
+  "content": "Message text"
+}
+```
+
+### `GET /health`
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-11-19T12:34:56.789Z"
+}
+```
+
+---
+
+## 🔗 Related Projects
+
+**KTP Competitive Infrastructure:**
+- **[KTP-ReHLDS](https://github.com/afraznein/KTP-ReHLDS)** - Custom ReHLDS fork with pause HUD updates
+- **[KTP-ReAPI](https://github.com/afraznein/KTP-ReAPI)** - Custom ReAPI fork with pause hooks
+- **[KTP Match Handler](https://github.com/afraznein/KTPMatchHandler)** - Match management plugin
+- **[KTP Cvar Checker](https://github.com/afraznein/KTPCvarChecker)** - Anti-cheat system
+- **[KTP Score Parser](https://github.com/afraznein/KTPScoreParser)** - Match statistics parser
+- **[KTPScoreBot-WeeklyMatches](https://github.com/afraznein/KTPScoreBot-WeeklyMatches)** - Weekly match tracking
+
+---
+
+## 📝 License
+
+MIT License - See [LICENSE](LICENSE) file for details
+
+---
+
+## 👤 Author
+
+**Nein_**
+- GitHub: [@afraznein](https://github.com/afraznein)
+- Project: KTP Competitive Infrastructure
+
+---
+
+## 🙏 Acknowledgments
+
+- **Discord** - API platform
+- **Google Cloud** - Cloud Run hosting
+- **Express.js** - Web framework
+- **KTP Community** - Testing and feedback
+
+---
+
+## 📚 Additional Resources
+
+**Documentation:**
+- [Discord API Documentation](https://discord.com/developers/docs/intro)
+- [Google Cloud Run Documentation](https://cloud.google.com/run/docs)
+- [KTP Match Handler Discord Guide](https://github.com/afraznein/KTPMatchHandler/blob/main/DISCORD_GUIDE.md)
+
+**Deployment:**
+- [Cloud Run Quickstart](https://cloud.google.com/run/docs/quickstarts/build-and-deploy)
+- [Cloud Run Authentication](https://cloud.google.com/run/docs/authenticating/overview)
+- [Cloud Run Secrets](https://cloud.google.com/run/docs/configuring/secrets)
