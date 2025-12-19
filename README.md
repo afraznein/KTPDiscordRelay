@@ -322,41 +322,162 @@ gcloud run services update ktp-relay \
 
 ## 📋 API Endpoints
 
-### `POST /reply`
-Send a message to a Discord channel.
+All authenticated endpoints require the `X-Relay-Auth` header with your shared secret.
 
-**Headers:**
-- `X-Relay-Auth: <RELAY_SHARED_SECRET>`
-- `Content-Type: application/json`
+### Health & Diagnostics
+
+#### `GET /health`
+Health check with environment validation.
+
+```json
+{ "ok": true, "time": "2025-01-15T12:34:56.789Z" }
+```
+
+#### `GET /whoami`
+Get bot identity (authenticated).
+
+#### `GET /whoami-public`
+Get bot identity (public, no auth required).
+
+#### `GET /httpcheck`
+Test Discord gateway connectivity (public, no auth required).
+
+---
+
+### Messages
+
+#### `POST /reply`
+Send a message to a Discord channel.
 
 **Request Body:**
 ```json
 {
   "channelId": "1234567890123456789",
   "content": "Message text",
-  "embeds": []  // optional
+  "embeds": [],
+  "referenceMessageId": "987654321098765432"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `channelId` | Yes | Target channel ID |
+| `content` | No | Message text (max 1900 chars) |
+| `embeds` | No | Array of Discord embed objects |
+| `referenceMessageId` | No | Message ID to reply to |
+
+#### `GET /messages`
+List messages in a channel.
+
+**Query Parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `channelId` | Required. Channel to fetch from |
+| `after` | Get messages after this ID |
+| `around` | Get messages around this ID |
+| `limit` | Max messages (default 50, max 100) |
+
+#### `GET /message/:channelId/:messageId`
+Get a specific message by ID.
+
+#### `POST /edit`
+Edit an existing message.
+
+**Request Body:**
+```json
+{
+  "channelId": "1234567890123456789",
+  "messageId": "987654321098765432",
+  "content": "Updated text",
+  "embeds": []
+}
+```
+
+#### `DELETE /delete/:channelId/:messageId`
+Delete a message.
+
+---
+
+### Channels
+
+#### `GET /channel/:channelId`
+Get channel information.
+
+---
+
+### Reactions
+
+#### `POST /react`
+Add a reaction to a message.
+
+**Request Body:**
+```json
+{
+  "channelId": "1234567890123456789",
+  "messageId": "987654321098765432",
+  "emoji": "👍"
+}
+```
+
+The `emoji` can be a unicode emoji or custom emoji in `name:id` format.
+
+#### `GET /reactions`
+List users who reacted to a message (with role enrichment).
+
+**Query Parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `channelId` | Required. Channel ID |
+| `messageId` | Required. Message ID |
+| `emoji` | Required. Emoji (unicode or `name:id`) |
+
+**Response:**
+```json
+[
+  {
+    "id": "123456789",
+    "username": "player1",
+    "displayName": "Player One",
+    "roles": ["role_id_1", "role_id_2"]
+  }
+]
+```
+
+---
+
+### Direct Messages
+
+#### `POST /dm`
+Send a direct message to a user.
+
+**Request Body:**
+```json
+{
+  "userId": "123456789012345678",
+  "content": "Hello!"
 }
 ```
 
 **Response:**
 ```json
 {
+  "ok": true,
   "id": "987654321098765432",
-  "channel_id": "1234567890123456789",
-  "content": "Message text"
+  "channelId": "111222333444555666"
 }
 ```
 
-### `GET /health`
-Health check endpoint.
+---
 
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-11-19T12:34:56.789Z"
-}
-```
+### OAuth (Optional)
+
+These endpoints support Discord OAuth for linking external accounts (e.g., Twitch).
+
+#### `GET /oauth/discord/login?userId=<discordUserId>`
+Redirect user to Discord OAuth consent page.
+
+#### `GET /oauth/discord/callback`
+OAuth callback handler (called by Discord after user authorizes).
 
 ---
 
