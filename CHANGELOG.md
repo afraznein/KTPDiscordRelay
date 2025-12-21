@@ -2,6 +2,17 @@
 
 All notable changes to KTP Discord Relay will be documented in this file.
 
+## [1.0.1] - 2025-12-20
+
+### Fixed
+- **Critical: fetchWithRetries() calls** - Fixed incorrect argument format causing 500 errors
+  - Changed from `fetchWithRetries(url, options, 2, 'postMessage')`
+  - To `fetchWithRetries(url, options, { retries: 2, backoffMs: 600 })`
+  - Affected endpoints: `/reply`, `/dm` (2 calls), `/edit`
+  - Root cause: Function signature mismatch caused retry logic to fail
+
+---
+
 ## [1.0.0] - 2024-12-18
 
 ### Added

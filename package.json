@@ -1,6 +1,6 @@
 {
   "name": "discord-relay",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Relay service for Google Apps Script <-> Discord",
   "main": "server.js",
   "type": "commonjs",

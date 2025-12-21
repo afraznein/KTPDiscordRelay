@@ -463,8 +463,7 @@ app.post('/reply', requireAuth, async (req, res) => {
     const r = await fetchWithRetries(
       url,
       { method: 'POST', headers: BASE_HEADERS, body: JSON.stringify(body) },
-      2,
-      'postMessage'
+      { retries: 2, backoffMs: 600 }
     );
 
     const text = await r.text();
@@ -516,8 +515,7 @@ app.post('/dm', requireAuth, async (req, res) => {
     const chResp = await fetchWithRetries(
       `${DISCORD_API}/users/@me/channels`,
       { method: 'POST', headers: BASE_HEADERS, body: JSON.stringify({ recipient_id: String(userId) }) },
-      2,
-      'dmOpen'
+      { retries: 2, backoffMs: 600 }
     );
     if (!chResp.ok) {
       const t = await chResp.text();
@@ -532,8 +530,7 @@ app.post('/dm', requireAuth, async (req, res) => {
     const msgResp = await fetchWithRetries(
       `${DISCORD_API}/channels/${encodeURIComponent(dmChan.id)}/messages`,
       { method: 'POST', headers: BASE_HEADERS, body: JSON.stringify({ content: String(content) }) },
-      2,
-      'dmSend'
+      { retries: 2, backoffMs: 600 }
     );
     const msgText = await msgResp.text();
     if (!msgResp.ok) {
@@ -573,8 +570,7 @@ app.post('/edit', requireAuth, async (req, res) => {
     const r = await fetchWithRetries(
       url,
       { method: 'PATCH', headers: BASE_HEADERS, body: JSON.stringify(body) },
-      2,
-      'editMessage'
+      { retries: 2, backoffMs: 600 }
     );
 
     const text = await r.text();
