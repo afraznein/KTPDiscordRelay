@@ -29,7 +29,7 @@ function ts() { return new Date().toISOString(); }
 function nowIso() { return ts(); } // keep compatibility
 
 function discordStyleUA() {
-  return 'DiscordBot (https://github.com/discord/discord-api-docs, v10) Relay/1.0';
+  return 'DiscordBot (https://github.com/discord/discord-api-docs, v10) Relay/1.0.1';
 }
 
 // Shared headers for Discord API

@@ -2,7 +2,7 @@
 
 All notable changes to KTP Discord Relay will be documented in this file.
 
-## [1.0.1] - 2025-12-20
+## [1.0.1] - 2025-12-21
 
 ### Fixed
 - **Critical: fetchWithRetries() calls** - Fixed incorrect argument format causing 500 errors
@@ -11,9 +11,12 @@ All notable changes to KTP Discord Relay will be documented in this file.
   - Affected endpoints: `/reply`, `/dm` (2 calls), `/edit`
   - Root cause: Function signature mismatch caused retry logic to fail
 
+### Changed
+- **POST /dm response** - Now includes `channelId` in the response JSON for DM channel tracking
+
 ---
 
-## [1.0.0] - 2024-12-18
+## [1.0.0] - 2025-10-14
 
 ### Added
 - Initial release
