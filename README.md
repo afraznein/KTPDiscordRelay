@@ -1,6 +1,6 @@
 # KTP Discord Relay
 
-**Lightweight HTTP Relay Server for KTP Competitive Infrastructure**
+**Version 1.0.1** - Lightweight HTTP Relay Server for KTP Competitive Infrastructure
 
 A Node.js/Express HTTP relay that forwards requests from various KTP services to the Discord API V10, acting as a simple, stateless proxy. This design helps circumvent Cloudflare challenges and CORS restrictions while providing a secure bridge between game servers and Discord.
 
@@ -490,6 +490,21 @@ OAuth callback handler (called by Discord after user authorizes).
 - **[KTP Cvar Checker](https://github.com/afraznein/KTPCvarChecker)** - Anti-cheat system
 - **[KTP Score Parser](https://github.com/afraznein/KTPScoreParser)** - Match statistics parser
 - **[KTPScoreBot-WeeklyMatches](https://github.com/afraznein/KTPScoreBot-WeeklyMatches)** - Weekly match tracking
+
+---
+
+## 📝 Version History
+
+### v1.0.1 (2025-12-21) - Bug Fix
+- 🔧 **FIXED: fetchWithRetries() calls** - Fixed incorrect argument format causing 500 errors on `/reply`, `/dm`, `/edit` endpoints
+- ✅ **ADDED: DM channel tracking** - POST /dm response now includes `channelId`
+
+### v1.0.0 (2025-10-14) - Initial Release
+- ✅ Express.js HTTP relay server for Discord API V10
+- ✅ Shared secret authentication via `X-Relay-Auth` header
+- ✅ Automatic retry logic with exponential backoff
+- ✅ Discord rate limit handling with `Retry-After` support
+- ✅ Full endpoint suite: messages, channels, reactions, DMs, OAuth
 
 ---
 
