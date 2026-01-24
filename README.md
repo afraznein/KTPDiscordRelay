@@ -156,8 +156,17 @@ Cloud Run will print the public HTTPS URL on success (e.g., `https://ktp-relay-x
 |----------|----------|-------------|
 | `RELAY_SHARED_SECRET` | ✅ | Shared secret for authenticating relay requests (sent as `X-Relay-Auth` header) |
 | `DISCORD_BOT_TOKEN` | ✅ | Discord bot token for API authentication |
-| `OAUTH_JWT_SECRET` | ⚠️ | Secret for OAuth state signing (only if using OAuth flow) |
 | `PORT` | ❌ | Server port (default: 8080, Cloud Run sets this automatically) |
+
+**OAuth Flow Variables** (only required if using `/oauth/discord/*` endpoints):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OAUTH_JWT_SECRET` | ⚠️ | Secret for signing OAuth state tokens (JWT) |
+| `DISCORD_CLIENT_ID` | ⚠️ | Discord application OAuth2 client ID |
+| `DISCORD_CLIENT_SECRET` | ⚠️ | Discord application OAuth2 client secret |
+| `DISCORD_REDIRECT_URI` | ⚠️ | OAuth2 callback URL (e.g., `https://your-relay.run.app/oauth/discord/callback`) |
+| `WM_WEBAPP_SHARED_SECRET` | ⚠️ | Shared secret for Apps Script webapp integration (Twitch linking) |
 
 ### Client Configuration
 
