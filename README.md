@@ -1,553 +1,172 @@
 # KTP Discord Relay
 
-**Version 1.0.1** - Lightweight HTTP Relay Server for KTP Competitive Infrastructure
+**Version 1.0.1** | HTTP relay service for KTP competitive infrastructure to Discord API
 
-A Node.js/Express HTTP relay that forwards requests from various KTP services to the Discord API V10, acting as a simple, stateless proxy. This design helps circumvent Cloudflare challenges and CORS restrictions while providing a secure bridge between game servers and Discord.
+A Node.js/Express HTTP relay that forwards requests from KTP services to the Discord API V10. Stateless proxy deployed on Google Cloud Run that handles authentication, retry logic, and rate limiting.
 
----
-
-## 🎯 Purpose
-
-The KTP Discord Relay enables multiple KTP services to communicate with Discord:
-
-1. **KTP Match Handler** (AMX ModX plugin) - Real-time match notifications
-   - Pause/unpause events
-   - Match start/end notifications
-   - Player disconnect alerts
-   - Technical pause warnings
-
-2. **KTP Score Parser** (Google Apps Script) - Post-match statistics
-   - Score updates
-   - Player statistics
-   - Match results
-
-3. **KTPScoreBot-WeeklyMatches** (Google Apps Script) - Weekly match tracking
-   - Match scheduling
-   - Weekly recaps
-   - Leaderboard updates
-   - Historical statistics
-
-The relay acts as a proxy, forwarding API calls (fetching channel messages, posting replies, adding reactions) to Discord and returning the results.
+Part of the [KTP Competitive Infrastructure](https://github.com/afraznein).
 
 ---
 
-## 🧠 Core Behavior
+## Purpose
 
-**✅ Stateless Operation**
-- Each request is independent/asynchronous
-- No sessions or background processes
-- Scales to zero automatically
+Enables KTP game server plugins and backend services to communicate with Discord:
 
-**✅ No Caching**
-- Every request is passed directly to Discord in real-time
-- No data persistence or storage
+- **KTPMatchHandler** - Match start/end, pause events, player disconnect alerts
+- **KTPCvarChecker** - Cvar violation alerts
+- **KTPFileChecker** - File consistency alerts
+- **KTPAdminAudit** - Admin action logging
+- **KTPHLTVRecorder** - HLTV restart notices
+- **KTP Score Parser** (Apps Script) - Match statistics
+- **KTPScoreBot-WeeklyMatches** (Apps Script) - Weekly recaps and leaderboards
 
-**✅ Minimal Authentication**
-- Simple shared-secret auth via `X-Relay-Auth` header
-- No complex OAuth or permission systems
-
-**✅ Transparent Forwarding**
-- Request bodies and responses forwarded between clients and Discord
-- Minimal transformation of data
-
-**✅ Automatic Retries**
-- Built-in retry logic with exponential backoff
-- Honors Discord's `Retry-After` headers
-- Handles rate limiting gracefully
+The relay handles Discord API authentication, rate limiting, and retries. All business logic lives in the client applications.
 
 ---
 
-## 🪶 Design Philosophy
+## Architecture
 
-This relay is **intentionally minimal**.
-
-All business logic lives in the client applications:
-- **KTP Match Handler**: Match state tracking, pause logic, event formatting
-- **KTP Score Parser**: Message parsing, score updates, alias resolution, logging
-- **KTPScoreBot-WeeklyMatches**: Match scheduling, weekly recaps, leaderboards
-
-The relay's **only purpose** is to reliably and securely transmit requests and responses between clients and the Discord API **without altering data**.
-
----
-
-## 🚀 Deployment (Google Cloud Run)
-
-### Prerequisites
-- Node.js relay code (`server.js` + `package.json`)
-- Google Cloud SDK installed (`gcloud`)
-- Google Cloud project with billing enabled
-- Discord bot token
-
-### One-Time Project Setup
-
-```bash
-# Authenticate and select your project
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
-
-# Enable required services
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com
+```
+KTP Game Servers / Apps Script
+         | HTTPS + X-Relay-Auth
+         v
+KTP Discord Relay (Cloud Run)
+  - Auth validation
+  - Request forwarding
+  - Retry with backoff
+  - Rate limit handling
+         | Bot Token
+         v
+Discord API V10
 ```
 
-### Deployment Options
+---
 
-#### **Option A: Deploy from Source (Recommended)**
+## API Endpoints
 
-Simplest method—Cloud Run auto-detects your runtime and builds automatically.
+All authenticated endpoints require `X-Relay-Auth` header.
 
-```bash
-# From the repository root
-gcloud run deploy ktp-relay \
-  --source . \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --set-env-vars "RELAY_SHARED_SECRET=your-secret-here,DISCORD_BOT_TOKEN=your-bot-token" \
-  --memory 256Mi \
-  --concurrency 80 \
-  --timeout 30s
-```
+### Health & Diagnostics
 
-**Environment Variables:**
-- `RELAY_SHARED_SECRET` - Shared secret for authenticating relay requests
-- `DISCORD_BOT_TOKEN` - Your Discord bot token
-- `OAUTH_JWT_SECRET` - (Optional) Secret for OAuth state signing
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `GET /health` | No | Health check + env validation |
+| `GET /whoami` | Yes | Bot identity |
+| `GET /whoami-public` | No | Bot identity (public) |
+| `GET /httpcheck` | No | Discord gateway connectivity test |
 
-> ⚠️ **Security**: Never commit secrets to git. Use environment variables or Cloud Run's Secrets Manager.
+### Messages
 
-#### **Option B: Build Container, Then Deploy**
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `POST /reply` | Yes | Send message to channel (supports embeds, replies) |
+| `GET /messages` | Yes | List channel messages (paginated) |
+| `GET /message/:channelId/:messageId` | Yes | Get specific message |
+| `POST /edit` | Yes | Edit existing message |
+| `DELETE /delete/:channelId/:messageId` | Yes | Delete message |
+| `POST /dm` | Yes | Send direct message to user |
 
-For explicit control over the Docker image:
+### Reactions & Channels
 
-```bash
-# Create Artifact Registry repository
-gcloud artifacts repositories create relay-repo \
-  --repository-format=docker \
-  --location=us \
-  --description="KTP Relay images"
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `POST /react` | Yes | Add reaction to message |
+| `GET /reactions` | Yes | List reactors with role enrichment |
+| `GET /channel/:channelId` | Yes | Get channel info |
 
-# Configure Docker authentication
-gcloud auth configure-docker us-docker.pkg.dev
+### OAuth (Optional)
 
-# Build and push image
-gcloud builds submit --tag us-docker.pkg.dev/YOUR_PROJECT_ID/relay-repo/ktp-relay:latest .
-
-# Deploy
-gcloud run deploy ktp-relay \
-  --image us-docker.pkg.dev/YOUR_PROJECT_ID/relay-repo/ktp-relay:latest \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --set-env-vars "RELAY_SHARED_SECRET=your-secret-here,DISCORD_BOT_TOKEN=your-bot-token" \
-  --memory 256Mi \
-  --concurrency 80 \
-  --timeout 30s
-```
-
-Cloud Run will print the public HTTPS URL on success (e.g., `https://ktp-relay-xxxxx-uc.a.run.app`).
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `GET /oauth/discord/login` | No | Initiate Discord OAuth (Twitch linking) |
+| `GET /oauth/discord/callback` | No | OAuth callback handler |
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
-### Environment Variables
+### Required Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `RELAY_SHARED_SECRET` | ✅ | Shared secret for authenticating relay requests (sent as `X-Relay-Auth` header) |
-| `DISCORD_BOT_TOKEN` | ✅ | Discord bot token for API authentication |
-| `PORT` | ❌ | Server port (default: 8080, Cloud Run sets this automatically) |
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_BOT_TOKEN` | Discord bot token |
+| `RELAY_SHARED_SECRET` | Shared secret for `X-Relay-Auth` header |
 
-**OAuth Flow Variables** (only required if using `/oauth/discord/*` endpoints):
+### Optional (OAuth flow only)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OAUTH_JWT_SECRET` | ⚠️ | Secret for signing OAuth state tokens (JWT) |
-| `DISCORD_CLIENT_ID` | ⚠️ | Discord application OAuth2 client ID |
-| `DISCORD_CLIENT_SECRET` | ⚠️ | Discord application OAuth2 client secret |
-| `DISCORD_REDIRECT_URI` | ⚠️ | OAuth2 callback URL (e.g., `https://your-relay.run.app/oauth/discord/callback`) |
-| `WM_WEBAPP_SHARED_SECRET` | ⚠️ | Shared secret for Apps Script webapp integration (Twitch linking) |
+| Variable | Description |
+|----------|-------------|
+| `PORT` | Server port (default: 8080, Cloud Run sets this) |
+| `OAUTH_JWT_SECRET` | JWT signing secret for OAuth state |
+| `DISCORD_CLIENT_ID` | Discord OAuth2 client ID |
+| `DISCORD_CLIENT_SECRET` | Discord OAuth2 client secret |
+| `DISCORD_REDIRECT_URI` | OAuth2 callback URL |
+| `WM_WEBAPP_SHARED_SECRET` | Apps Script integration secret |
 
 ### Client Configuration
 
-**KTP Match Handler** (`discord.ini`):
+**KTP plugins** (`discord.ini`):
 ```ini
 discord_relay_url=https://your-relay-xxxxx.run.app/reply
 discord_channel_id=1234567890123456789
 discord_auth_secret=your-secret-here
 ```
 
-**KTP Score Parser / KTPScoreBot-WeeklyMatches** (Apps Script):
-```javascript
-const RELAY_URL = 'https://your-relay-xxxxx.run.app/reply';
-const RELAY_AUTH = 'your-secret-here';
-const CHANNEL_ID = '1234567890123456789';
-```
-
 ---
 
-## 🧪 Testing
+## Deployment (Google Cloud Run)
 
-### Health Check
 ```bash
-curl -s https://YOUR_RUN_URL/health
+gcloud run deploy ktp-relay \
+  --source . \
+  --region us-central1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars "RELAY_SHARED_SECRET=xxx,DISCORD_BOT_TOKEN=xxx" \
+  --memory 256Mi \
+  --concurrency 80 \
+  --timeout 30s
 ```
 
-### Test Reply Endpoint
+### Update
+
 ```bash
-curl -X POST https://YOUR_RUN_URL/reply \
-  -H "X-Relay-Auth: your-secret-here" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channelId": "1234567890123456789",
-    "content": "Hello from KTP Discord Relay!"
-  }'
-```
-
-### From KTP Match Handler
-The plugin automatically sends requests when match events occur. Check your Discord channel for notifications.
-
----
-
-## 🔒 Security Best Practices
-
-### Authentication
-
-**Current Setup (Shared Secret):**
-- Simple `X-Relay-Auth` header validation
-- Good for trusted internal services
-- Protects against casual abuse
-
-**Recommended for Production:**
-
-1. **Keep `--allow-unauthenticated` but enforce strong secrets:**
-   - Use a cryptographically random `RELAY_SHARED_SECRET`
-   - Rotate secrets periodically
-   - Monitor access logs
-
-2. **Use Cloud Run IAM (Advanced):**
-   ```bash
-   # Remove --allow-unauthenticated
-   gcloud run deploy ktp-relay \
-     --source . \
-     --region us-central1 \
-     --no-allow-unauthenticated
-
-   # Grant invoker access to service account
-   gcloud run services add-iam-policy-binding ktp-relay \
-     --member="serviceAccount:YOUR_SA@PROJECT.iam.gserviceaccount.com" \
-     --role="roles/run.invoker"
-   ```
-
-3. **Additional Protection:**
-   - Cloud Armor for IP allowlisting
-   - VPC Service Controls
-   - API Gateway with rate limiting
-
-### Secret Management
-
-**Never commit secrets to git:**
-- ✅ Use Cloud Run environment variables
-- ✅ Use Cloud Run Secrets Manager
-- ✅ Use `.env` file (local dev only, add to `.gitignore`)
-- ❌ Don't hardcode in `server.js`
-- ❌ Don't commit to version control
-
----
-
-## 📊 Operations
-
-### View Logs
-```bash
-gcloud logs tail \
-  --project YOUR_PROJECT_ID \
-  --service ktp-relay
-```
-
-### Update Deployment
-```bash
-# After making code changes, re-run the deploy command
 gcloud run deploy ktp-relay --source . --region us-central1
 ```
 
-### Scale Configuration
+### Logs
 
-**Auto-scale (default):**
-- Scales to zero when not in use
-- Scales up based on traffic
-- Cost-effective for intermittent usage
-
-**Keep warm (optional):**
 ```bash
-gcloud run services update ktp-relay \
-  --region us-central1 \
-  --min-instances 1
-```
-
-### Resource Limits
-```bash
-gcloud run services update ktp-relay \
-  --region us-central1 \
-  --memory 512Mi \
-  --cpu 1 \
-  --concurrency 100 \
-  --max-instances 10
+gcloud logs tail --project YOUR_PROJECT_ID --service ktp-relay
 ```
 
 ---
 
-## 🏗️ Architecture
+## Key Design Decisions
 
-```
-┌─────────────────────────┐
-│  KTP Match Handler      │
-│  (AMX ModX Plugin)      │
-│  - Pause events         │
-│  - Match notifications  │
-└────────┬────────────────┘
-         │
-         │ HTTPS + X-Relay-Auth
-         ↓
-┌─────────────────────────┐      ┌─────────────────────────┐
-│  KTP Discord Relay      │ ←──→ │  Discord API V10        │
-│  (Cloud Run)            │      │  - Channels             │
-│  - Auth validation      │      │  - Messages             │
-│  - Request forwarding   │      │  - Reactions            │
-│  - Retry logic          │      │                         │
-└────────┬────────────────┘      └─────────────────────────┘
-         │
-         │ HTTPS + X-Relay-Auth
-         ↓
-┌─────────────────────────┐         ┌─────────────────────────┐
-│  KTP Score Parser       │         │  KTPScoreBot-           │
-│  (Google Apps Script)   │         │  WeeklyMatches          │
-│  - Match statistics     │         │  (Google Apps Script)   │
-│  - Score updates        │         │  - Weekly recaps        │
-└─────────────────────────┘         │  - Leaderboards         │
-                                     └─────────────────────────┘
-```
+- **Stateless** - Each request is independent, scales to zero
+- **Retry with backoff** - Honors Discord `Retry-After` headers, exponential backoff, capped at 60s
+- **No accidental pings** - `allowed_mentions: { parse: [] }` on all outgoing messages
+- **Content truncation** - Messages capped at 1900 chars (Discord limit is 2000)
+- **Emoji cache** - In-memory 60s TTL for guild emoji lookups
 
 ---
 
-## 📋 API Endpoints
+## Related Projects
 
-All authenticated endpoints require the `X-Relay-Auth` header with your shared secret.
+**KTP Stack:**
+- [KTPMatchHandler](https://github.com/afraznein/KTPMatchHandler) - Primary consumer (match events)
+- [KTPCvarChecker](https://github.com/afraznein/KTPCvarChecker) - Cvar violation alerts
+- [KTPAdminAudit](https://github.com/afraznein/KTPAdminAudit) - Admin action logging
 
-### Health & Diagnostics
-
-#### `GET /health`
-Health check with environment validation.
-
-```json
-{ "ok": true, "time": "2025-01-15T12:34:56.789Z" }
-```
-
-#### `GET /whoami`
-Get bot identity (authenticated).
-
-#### `GET /whoami-public`
-Get bot identity (public, no auth required).
-
-#### `GET /httpcheck`
-Test Discord gateway connectivity (public, no auth required).
-
----
-
-### Messages
-
-#### `POST /reply`
-Send a message to a Discord channel.
-
-**Request Body:**
-```json
-{
-  "channelId": "1234567890123456789",
-  "content": "Message text",
-  "embeds": [],
-  "referenceMessageId": "987654321098765432"
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `channelId` | Yes | Target channel ID |
-| `content` | No | Message text (max 1900 chars) |
-| `embeds` | No | Array of Discord embed objects |
-| `referenceMessageId` | No | Message ID to reply to |
-
-#### `GET /messages`
-List messages in a channel.
-
-**Query Parameters:**
-| Parameter | Description |
-|-----------|-------------|
-| `channelId` | Required. Channel to fetch from |
-| `after` | Get messages after this ID |
-| `around` | Get messages around this ID |
-| `limit` | Max messages (default 50, max 100) |
-
-#### `GET /message/:channelId/:messageId`
-Get a specific message by ID.
-
-#### `POST /edit`
-Edit an existing message.
-
-**Request Body:**
-```json
-{
-  "channelId": "1234567890123456789",
-  "messageId": "987654321098765432",
-  "content": "Updated text",
-  "embeds": []
-}
-```
-
-#### `DELETE /delete/:channelId/:messageId`
-Delete a message.
-
----
-
-### Channels
-
-#### `GET /channel/:channelId`
-Get channel information.
-
----
-
-### Reactions
-
-#### `POST /react`
-Add a reaction to a message.
-
-**Request Body:**
-```json
-{
-  "channelId": "1234567890123456789",
-  "messageId": "987654321098765432",
-  "emoji": "👍"
-}
-```
-
-The `emoji` can be a unicode emoji or custom emoji in `name:id` format.
-
-#### `GET /reactions`
-List users who reacted to a message (with role enrichment).
-
-**Query Parameters:**
-| Parameter | Description |
-|-----------|-------------|
-| `channelId` | Required. Channel ID |
-| `messageId` | Required. Message ID |
-| `emoji` | Required. Emoji (unicode or `name:id`) |
-
-**Response:**
-```json
-[
-  {
-    "id": "123456789",
-    "username": "player1",
-    "displayName": "Player One",
-    "roles": ["role_id_1", "role_id_2"]
-  }
-]
-```
-
----
-
-### Direct Messages
-
-#### `POST /dm`
-Send a direct message to a user.
-
-**Request Body:**
-```json
-{
-  "userId": "123456789012345678",
-  "content": "Hello!"
-}
-```
-
-**Response:**
-```json
-{
-  "ok": true,
-  "id": "987654321098765432",
-  "channelId": "111222333444555666"
-}
-```
-
----
-
-### OAuth (Optional)
-
-These endpoints support Discord OAuth for linking external accounts (e.g., Twitch).
-
-#### `GET /oauth/discord/login?userId=<discordUserId>`
-Redirect user to Discord OAuth consent page.
-
-#### `GET /oauth/discord/callback`
-OAuth callback handler (called by Discord after user authorizes).
-
----
-
-## 🔗 Related Projects
-
-**KTP Competitive Infrastructure:**
-- **[KTP-ReHLDS](https://github.com/afraznein/KTP-ReHLDS)** - Custom ReHLDS fork with pause HUD updates
-- **[KTP-ReAPI](https://github.com/afraznein/KTP-ReAPI)** - Custom ReAPI fork with pause hooks
-- **[KTP Match Handler](https://github.com/afraznein/KTPMatchHandler)** - Match management plugin
-- **[KTP Cvar Checker](https://github.com/afraznein/KTPCvarChecker)** - Anti-cheat system
-- **[KTP Score Parser](https://github.com/afraznein/KTPScoreParser)** - Match statistics parser
-- **[KTPScoreBot-WeeklyMatches](https://github.com/afraznein/KTPScoreBot-WeeklyMatches)** - Weekly match tracking
-
----
-
-## 📝 Version History
-
-### v1.0.1 (2025-12-21) - Bug Fix
-- 🔧 **FIXED: fetchWithRetries() calls** - Fixed incorrect argument format causing 500 errors on `/reply`, `/dm`, `/edit` endpoints
-- ✅ **ADDED: DM channel tracking** - POST /dm response now includes `channelId`
-
-### v1.0.0 (2025-10-14) - Initial Release
-- ✅ Express.js HTTP relay server for Discord API V10
-- ✅ Shared secret authentication via `X-Relay-Auth` header
-- ✅ Automatic retry logic with exponential backoff
-- ✅ Discord rate limit handling with `Retry-After` support
-- ✅ Full endpoint suite: messages, channels, reactions, DMs, OAuth
-
----
-
-## 📝 License
-
-MIT License - See [LICENSE](LICENSE) file for details
-
----
-
-## 👤 Author
-
-**Nein_**
-- GitHub: [@afraznein](https://github.com/afraznein)
-- Project: KTP Competitive Infrastructure
-
----
-
-## 🙏 Acknowledgments
-
-- **Discord** - API platform
-- **Google Cloud** - Cloud Run hosting
-- **Express.js** - Web framework
-- **KTP Community** - Testing and feedback
-
----
-
-## 📚 Additional Resources
-
-**Documentation:**
+**External:**
 - [Discord API Documentation](https://discord.com/developers/docs/intro)
 - [Google Cloud Run Documentation](https://cloud.google.com/run/docs)
-- [KTP Match Handler Discord Guide](https://github.com/afraznein/KTPMatchHandler/blob/main/DISCORD_GUIDE.md)
 
-**Deployment:**
-- [Cloud Run Quickstart](https://cloud.google.com/run/docs/quickstarts/build-and-deploy)
-- [Cloud Run Authentication](https://cloud.google.com/run/docs/authenticating/overview)
-- [Cloud Run Secrets](https://cloud.google.com/run/docs/configuring/secrets)
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
+## License
+
+MIT License - See [LICENSE](LICENSE) for full text.

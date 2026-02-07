@@ -12,8 +12,7 @@ const DISCORD_BOT_TOKEN   = process.env.DISCORD_BOT_TOKEN || '';
 const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET || '';
 const PORT = process.env.PORT || 8080;
 
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');        // add to package.json
+const jwt = require('jsonwebtoken');
 const qs = require('querystring');
 
 function signState(payload) {
@@ -48,9 +47,6 @@ function requireAuth(req, res, next) {
   }
   next();
 }
-
-// Sleep + retries
-async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function fetchWithRetries(url, options = {}, { retries = 2, backoffMs = 600 } = {}) {
   let attempt = 0;
@@ -98,17 +94,6 @@ async function fetchWithRetries(url, options = {}, { retries = 2, backoffMs = 60
     }
   }
   throw lastErr || new Error('fetchWithRetries failed');
-}
-
-
-function pruneEmpty(obj) {
-  // remove undefined keys so we don't send invalid JSON to Discord
-  const out = {};
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (v === undefined) continue;
-    out[k] = v;
-  }
-  return out;
 }
 
 

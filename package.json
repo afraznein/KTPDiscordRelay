@@ -1,7 +1,7 @@
 {
   "name": "discord-relay",
   "version": "1.0.1",
-  "description": "Relay service for Google Apps Script <-> Discord",
+  "description": "HTTP relay service for KTP services to Discord API",
   "author": "Nein_ (afraznein) <https://github.com/afraznein>",
   "main": "server.js",
   "type": "commonjs",
