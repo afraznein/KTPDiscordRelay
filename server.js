@@ -426,16 +426,22 @@ app.get('/oauth/discord/callback', async (req, res) => {
 
 // Send a message (reply/plain)
 // POST /reply
-// Body: { channelId, content, embeds?, referenceMessageId?, allowed_mentions? }
+// Body: { channelId, content, embeds?, referenceMessageId?, allowed_mentions?, components? }
 //
 // allowed_mentions: optional override. Default behavior strips ALL mentions
 // (parse: []) to prevent accidental pings. Pass an explicit
 // allowed_mentions object (e.g. { roles: ["1002394466700767332"] }) to
 // permit a specific subset — used by KTPAntiCheat verdict embeds for
 // admin-role notifications on multi-flag sessions.
+//
+// components: optional Discord interactive-component payload (action rows
+// containing buttons / select menus). Used by KTPAntiCheat verdict embeds
+// for the Acknowledge button. The KTPAdminBot listens on its gateway for
+// the resulting button-click interactions — the relay only delivers the
+// button to the channel; it doesn't process clicks itself.
 app.post('/reply', requireAuth, async (req, res) => {
   try {
-    const { channelId, content, embeds, referenceMessageId, allowed_mentions } = req.body || {};
+    const { channelId, content, embeds, referenceMessageId, allowed_mentions, components } = req.body || {};
     if (!channelId) return res.status(400).json({ error: 'channelId required' });
 
     const url = `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`;
@@ -444,6 +450,7 @@ app.post('/reply', requireAuth, async (req, res) => {
     const body = {
       content: typeof content === 'string' ? String(content).slice(0, 1900) : '',
       ...(Array.isArray(embeds) && embeds.length ? { embeds } : {}),
+      ...(Array.isArray(components) && components.length ? { components } : {}),
       ...(referenceMessageId
         ? { message_reference: { message_id: referenceMessageId, fail_if_not_exists: false } }
         : {}),
