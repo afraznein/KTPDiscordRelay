@@ -426,10 +426,16 @@ app.get('/oauth/discord/callback', async (req, res) => {
 
 // Send a message (reply/plain)
 // POST /reply
-// Body: { channelId, content, embeds?, referenceMessageId? }
+// Body: { channelId, content, embeds?, referenceMessageId?, allowed_mentions? }
+//
+// allowed_mentions: optional override. Default behavior strips ALL mentions
+// (parse: []) to prevent accidental pings. Pass an explicit
+// allowed_mentions object (e.g. { roles: ["1002394466700767332"] }) to
+// permit a specific subset — used by KTPAntiCheat verdict embeds for
+// admin-role notifications on multi-flag sessions.
 app.post('/reply', requireAuth, async (req, res) => {
   try {
-    const { channelId, content, embeds, referenceMessageId } = req.body || {};
+    const { channelId, content, embeds, referenceMessageId, allowed_mentions } = req.body || {};
     if (!channelId) return res.status(400).json({ error: 'channelId required' });
 
     const url = `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`;
@@ -441,8 +447,10 @@ app.post('/reply', requireAuth, async (req, res) => {
       ...(referenceMessageId
         ? { message_reference: { message_id: referenceMessageId, fail_if_not_exists: false } }
         : {}),
-      // avoid accidental pings
-      allowed_mentions: { parse: [] },
+      // Default safe (strip mentions); allow explicit override from caller.
+      allowed_mentions: (allowed_mentions && typeof allowed_mentions === 'object')
+        ? allowed_mentions
+        : { parse: [] },
     };
 
     const r = await fetchWithRetries(
