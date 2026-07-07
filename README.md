@@ -103,28 +103,33 @@ discord_auth_secret=your-secret-here
 
 ## Deployment (Google Cloud Run)
 
+The production service is named `discord-relay` (project `ktp-score-bot`),
+running 512Mi / concurrency 80 / timeout 300s.
+
 ```bash
-gcloud run deploy ktp-relay \
+gcloud run deploy discord-relay \
   --source . \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
   --set-env-vars "RELAY_SHARED_SECRET=xxx,DISCORD_BOT_TOKEN=xxx" \
-  --memory 256Mi \
+  --memory 512Mi \
   --concurrency 80 \
-  --timeout 30s
+  --timeout 300
 ```
 
 ### Update
 
+Env vars carry over between revisions — no need to re-set them:
+
 ```bash
-gcloud run deploy ktp-relay --source . --region us-central1
+gcloud run deploy discord-relay --source . --region us-central1 --project ktp-score-bot
 ```
 
 ### Logs
 
 ```bash
-gcloud logs tail --project YOUR_PROJECT_ID --service ktp-relay
+gcloud beta run services logs tail discord-relay --region us-central1 --project ktp-score-bot
 ```
 
 ---
