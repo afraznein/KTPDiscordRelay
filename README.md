@@ -1,6 +1,6 @@
 # KTP Discord Relay
 
-**Version 1.0.1** | HTTP relay service for KTP competitive infrastructure to Discord API
+**Version 1.1.0** | HTTP relay service for KTP competitive infrastructure to Discord API
 
 A Node.js/Express HTTP relay that forwards requests from KTP services to the Discord API V10. Stateless proxy deployed on Google Cloud Run that handles authentication, retry logic, and rate limiting.
 
@@ -51,9 +51,8 @@ All authenticated endpoints require `X-Relay-Auth` header.
 | Endpoint | Auth | Description |
 |----------|------|-------------|
 | `GET /health` | No | Health check + env validation |
+| `GET /` | No | Root liveness |
 | `GET /whoami` | Yes | Bot identity |
-| `GET /whoami-public` | No | Bot identity (public) |
-| `GET /httpcheck` | No | Discord gateway connectivity test |
 
 ### Messages
 
@@ -74,13 +73,6 @@ All authenticated endpoints require `X-Relay-Auth` header.
 | `GET /reactions` | Yes | List reactors with role enrichment |
 | `GET /channel/:channelId` | Yes | Get channel info |
 
-### OAuth (Optional)
-
-| Endpoint | Auth | Description |
-|----------|------|-------------|
-| `GET /oauth/discord/login` | No | Initiate Discord OAuth (Twitch linking) |
-| `GET /oauth/discord/callback` | No | OAuth callback handler |
-
 ---
 
 ## Configuration
@@ -92,16 +84,11 @@ All authenticated endpoints require `X-Relay-Auth` header.
 | `DISCORD_BOT_TOKEN` | Discord bot token |
 | `RELAY_SHARED_SECRET` | Shared secret for `X-Relay-Auth` header |
 
-### Optional (OAuth flow only)
+### Optional
 
 | Variable | Description |
 |----------|-------------|
 | `PORT` | Server port (default: 8080, Cloud Run sets this) |
-| `OAUTH_JWT_SECRET` | JWT signing secret for OAuth state |
-| `DISCORD_CLIENT_ID` | Discord OAuth2 client ID |
-| `DISCORD_CLIENT_SECRET` | Discord OAuth2 client secret |
-| `DISCORD_REDIRECT_URI` | OAuth2 callback URL |
-| `WM_WEBAPP_SHARED_SECRET` | Apps Script integration secret |
 
 ### Client Configuration
 
@@ -146,7 +133,7 @@ gcloud logs tail --project YOUR_PROJECT_ID --service ktp-relay
 
 - **Stateless** - Each request is independent, scales to zero
 - **Retry with backoff** - Honors Discord `Retry-After` headers, exponential backoff, capped at 60s
-- **No accidental pings** - `allowed_mentions: { parse: [] }` on all outgoing messages
+- **Mentions stripped by default** - outgoing messages default to `allowed_mentions: { parse: [] }`; callers may pass an explicit `allowed_mentions` to opt in (used by the crash reporter, perf rollup, fleet health, and admin-bot verdict embeds)
 - **Content truncation** - Messages capped at 1900 chars (Discord limit is 2000)
 - **Emoji cache** - In-memory 60s TTL for guild emoji lookups
 
