@@ -1,6 +1,6 @@
 # KTP Discord Relay
 
-**Version 1.1.0** | HTTP relay service for KTP competitive infrastructure to Discord API
+**Version 1.1.1** | HTTP relay service for KTP competitive infrastructure to Discord API
 
 A Node.js/Express HTTP relay that forwards requests from KTP services to the Discord API V10. Stateless proxy deployed on Google Cloud Run that handles authentication, retry logic, and rate limiting.
 

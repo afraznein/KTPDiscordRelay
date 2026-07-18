@@ -77,7 +77,7 @@ gcloud run deploy discord-relay --source . --region us-central1 --project ktp-sc
 All authenticated endpoints require `X-Relay-Auth` header matching `RELAY_SHARED_SECRET`.
 
 ## Version
-Current: v1.1.0
+Current: v1.1.1
 
 ## SSH Access (for debugging/logs)
 

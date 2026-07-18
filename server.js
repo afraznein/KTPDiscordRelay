@@ -47,11 +47,23 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// Per-request ceiling so a hung Discord response can't hold a Cloud Run request
+// slot for the full 300s platform deadline. Above the Pawn callers' 5s curl
+// timeout so a caller that already gave up doesn't leave a long-lived attempt.
+const FETCH_TIMEOUT_MS = 10_000;
+
 async function fetchWithRetries(url, options = {}, { retries = 2, backoffMs = 600 } = {}) {
   let attempt = 0;
   let lastErr = null;
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // A 5xx or transport error on a non-idempotent write (POST/PATCH) may have
+  // landed AFTER Discord already committed the message — resending would post a
+  // duplicate. So writes never auto-retry those; only 429 (which Discord rejects
+  // before processing the write) and idempotent methods retry.
+  const method = (options.method || 'GET').toUpperCase();
+  const isWrite = method === 'POST' || method === 'PATCH';
 
   function parseRetryAfter(h) {
     if (!h) return null;
@@ -69,16 +81,21 @@ async function fetchWithRetries(url, options = {}, { retries = 2, backoffMs = 60
 
   while (attempt <= retries) {
     try {
-      const resp = await fetch(url, options);
+      const resp = await fetch(url, {
+        ...options,
+        signal: options.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
 
       if (resp.status === 429 || resp.status >= 500) {
         const body = await resp.text().catch(() => '');
         lastErr = new Error(`HTTP ${resp.status} ${url} body=${body.slice(0,200)}`);
 
+        const retryable = resp.status === 429 || !isWrite;
+        if (!retryable || attempt === retries) throw lastErr;
+
         // honor Retry-After when present (cap at 60s to be safe on Cloud Run)
         const retryAfter = parseRetryAfter(resp.headers.get('retry-after'));
         const waitMs = retryAfter ?? backoffMs * Math.pow(2, attempt);
-        if (attempt === retries) throw lastErr;
         await sleep(waitMs);
         attempt++;
         continue;
@@ -87,7 +104,8 @@ async function fetchWithRetries(url, options = {}, { retries = 2, backoffMs = 60
       return resp;
     } catch (e) {
       lastErr = e;
-      if (attempt === retries) break;
+      // Don't resend a write on a transport error/timeout — it may have committed.
+      if (isWrite || attempt === retries) break;
       await sleep(backoffMs * Math.pow(2, attempt));
       attempt++;
     }
@@ -95,6 +113,17 @@ async function fetchWithRetries(url, options = {}, { retries = 2, backoffMs = 60
   throw lastErr || new Error('fetchWithRetries failed');
 }
 
+
+// Truncate to `max` chars without splitting a surrogate pair — a 4-byte emoji
+// straddling the cut would otherwise become a lone surrogate and render as "�"
+// once the body is UTF-8 encoded on the way to Discord.
+function truncateSafe(s, max) {
+  const str = String(s);
+  if (str.length <= max) return str;
+  const code = str.charCodeAt(max - 1);
+  const end = (code >= 0xD800 && code <= 0xDBFF) ? max - 1 : max;
+  return str.slice(0, end);
+}
 
 // ---------- Emoji helpers ----------
 function buildEmojiPathSegment({ name, id }) {
@@ -318,7 +347,7 @@ app.post('/reply', requireAuth, async (req, res) => {
 
     // Discord allows empty content if embeds exist.
     const body = {
-      content: typeof content === 'string' ? String(content).slice(0, 1900) : '',
+      content: typeof content === 'string' ? truncateSafe(content, 1900) : '',
       ...(Array.isArray(embeds) && embeds.length ? { embeds } : {}),
       ...(Array.isArray(components) && components.length ? { components } : {}),
       ...(referenceMessageId
@@ -399,7 +428,7 @@ app.post('/dm', requireAuth, async (req, res) => {
     // 2) Send the DM
     const msgResp = await fetchWithRetries(
       `${DISCORD_API}/channels/${encodeURIComponent(dmChan.id)}/messages`,
-      { method: 'POST', headers: BASE_HEADERS, body: JSON.stringify({ content: String(content).slice(0, 1900) }) },
+      { method: 'POST', headers: BASE_HEADERS, body: JSON.stringify({ content: truncateSafe(content, 1900) }) },
       { retries: 2, backoffMs: 600 }
     );
     const msgText = await msgResp.text();
@@ -432,7 +461,7 @@ app.post('/edit', requireAuth, async (req, res) => {
 
     // For PATCH, omit fields that aren’t changing.
     const body = {
-      ...(typeof content === 'string' ? { content: String(content).slice(0, 1900) } : {}),
+      ...(typeof content === 'string' ? { content: truncateSafe(content, 1900) } : {}),
       ...(Array.isArray(embeds) && embeds.length ? { embeds } : {}),
       allowed_mentions: { parse: [] },
     };

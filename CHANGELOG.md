@@ -2,6 +2,37 @@
 
 All notable changes to KTP Discord Relay will be documented in this file.
 
+## [1.1.1] - 2026-07-18
+
+`fetchWithRetries` hardening. No endpoint, auth, or response-shape changes — the
+`allowed_mentions` and `components` passthroughs are untouched.
+
+### Fixed
+- **Duplicate messages on a 5xx-after-commit (DR-01).** `fetchWithRetries` retried
+  any `429 || status >= 500` regardless of HTTP method, so a POST/PATCH that
+  Discord committed but then answered with a 502/503 (a known behavior for write
+  APIs behind an edge proxy under load) was resent with an identical body —
+  posting a duplicate embed or DM. Retries on a 5xx are now gated to idempotent
+  methods; a 5xx on a non-idempotent write (`POST`/`PATCH`) is terminal and
+  surfaced, never resent. `429` stays retryable for every method (Discord rejects
+  it before processing the write, so there is nothing to duplicate). The same
+  duplicate-avoidance now covers the transport-error/timeout path: a write is not
+  resent on a `fetch` rejection either, since it may have committed.
+
+### Added
+- **Per-request timeout (DR-02).** Every outbound `fetch` now carries a 10s
+  `AbortSignal.timeout` (was unbounded up to Cloud Run's 300s request deadline),
+  so a hung Discord response can't tie up a request slot during match-time
+  traffic bursts. Above the Pawn callers' 5s curl timeout; a caller-supplied
+  `signal` is respected if present. A timeout falls into the existing retry/catch
+  path (and, per DR-01, is not resent for writes).
+
+### Fixed (cosmetic)
+- **Surrogate-safe content truncation (DR-03).** The 1900-char content cap on
+  `/reply`, `/dm`, and `/edit` used a plain UTF-16 `.slice()`, which could split a
+  4-byte emoji straddling the boundary into a lone surrogate that renders as "�".
+  A shared `truncateSafe()` helper now drops a dangling high surrogate at the cut.
+
 ## [1.1.0] - 2026-07-06
 
 ### Retroactive documentation (shipped earlier without a version bump)
