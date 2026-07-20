@@ -2,7 +2,24 @@
 
 All notable changes to KTP Discord Relay will be documented in this file.
 
-## [1.1.1] - 2026-07-18
+## [Unreleased]
+
+### Documentation
+- README `/reply` row and Key Design Decisions now cover both load-bearing
+  passthroughs: `allowed_mentions` (scoped — only `POST /reply` honors a caller
+  override; `/edit` always strips, `/dm` sends none) and `components` (the
+  KTPAdminBot Acknowledge button). Documenting only one of the two invited the
+  next refactor to strip the other.
+- README retry bullet brought up to 1.1.1: `429` retries on every method, a 5xx
+  or transport error on a write is terminal, and each outbound request carries a
+  10s timeout.
+- Outbound User-Agent version stamp bumped to match `package.json` (was `1.1.0`).
+- `engines.node` floor raised to `>=22` to match the Dockerfile, which moved off
+  Node 20 in 1.1.0 because it reached end-of-life 2026-04-30.
+- `relay-dev` skill: unauthenticated-endpoint rule corrected to `/health` **and**
+  `/` — the README was already right.
+
+## [1.1.1] - 2026-07-18 (staged, not deployed)
 
 `fetchWithRetries` hardening. No endpoint, auth, or response-shape changes — the
 `allowed_mentions` and `components` passthroughs are untouched.
@@ -27,13 +44,13 @@ All notable changes to KTP Discord Relay will be documented in this file.
   `signal` is respected if present. A timeout falls into the existing retry/catch
   path (and, per DR-01, is not resent for writes).
 
-### Fixed (cosmetic)
-- **Surrogate-safe content truncation (DR-03).** The 1900-char content cap on
+### Fixed (continued)
+- **Surrogate-safe content truncation (DR-03, cosmetic).** The 1900-char content cap on
   `/reply`, `/dm`, and `/edit` used a plain UTF-16 `.slice()`, which could split a
   4-byte emoji straddling the boundary into a lone surrogate that renders as "�".
   A shared `truncateSafe()` helper now drops a dangling high surrogate at the cut.
 
-## [1.1.0] - 2026-07-06
+## [1.1.0] - 2026-07-06 (Cloud Run revision `discord-relay-00034-r54`)
 
 ### Retroactive documentation (shipped earlier without a version bump)
 

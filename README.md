@@ -58,7 +58,7 @@ All authenticated endpoints require `X-Relay-Auth` header.
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
-| `POST /reply` | Yes | Send message to channel (supports embeds, replies) |
+| `POST /reply` | Yes | Send message to channel (supports embeds, replies, `allowed_mentions`, `components`) |
 | `GET /messages` | Yes | List channel messages (paginated) |
 | `GET /message/:channelId/:messageId` | Yes | Get specific message |
 | `POST /edit` | Yes | Edit existing message |
@@ -137,8 +137,9 @@ gcloud beta run services logs tail discord-relay --region us-central1 --project 
 ## Key Design Decisions
 
 - **Stateless** - Each request is independent, scales to zero
-- **Retry with backoff** - Honors Discord `Retry-After` headers, exponential backoff, capped at 60s
-- **Mentions stripped by default** - outgoing messages default to `allowed_mentions: { parse: [] }`; callers may pass an explicit `allowed_mentions` to opt in (used by the crash reporter, perf rollup, fleet health, and admin-bot verdict embeds)
+- **Retry with backoff** - Honors Discord `Retry-After` headers, exponential backoff, capped at 60s. `429` retries on every method; a 5xx or transport error on a write (`POST`/`PATCH`) is terminal and surfaced, never resent — the write may already have committed. Each outbound request carries a 10s timeout.
+- **Mentions stripped by default** - outgoing messages default to `allowed_mentions: { parse: [] }`; callers may pass an explicit `allowed_mentions` on `POST /reply` to opt in (used by the crash reporter, perf rollup, fleet health, and admin-bot verdict embeds). `POST /edit` always strips mentions; `/dm` sends none.
+- **Interactive components passthrough** - `POST /reply` forwards an optional `components` array (action rows with buttons/selects); this is what delivers the KTPAdminBot Acknowledge button. The relay only delivers the component — KTPAdminBot handles the resulting interactions on its own gateway.
 - **Content truncation** - Messages capped at 1900 chars (Discord limit is 2000)
 - **Emoji cache** - In-memory 60s TTL for guild emoji lookups
 

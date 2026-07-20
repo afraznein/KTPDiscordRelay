@@ -37,7 +37,7 @@ KTPInfrastructure monitors, Apps Script score bots, KTPAdminBot. Therefore:
 - One shared secret (`X-Relay-Auth` vs `RELAY_SHARED_SECRET`) guards everything.
   Every new endpoint MUST require it — use the existing **timing-safe compare**
   helper in server.js, never `===`.
-- No unauthenticated endpoints besides `/health`. Debug/introspection endpoints
+- No unauthenticated endpoints besides `/health` and `/` (root liveness). Debug/introspection endpoints
   without auth were removed in 1.1.0; don't reintroduce them.
 - The relay holds the bot token; nothing that echoes config/env may ship.
 - `/dm` content is capped (1900 chars). Respect Discord API limits on new
