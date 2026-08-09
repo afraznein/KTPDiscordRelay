@@ -19,7 +19,17 @@ All notable changes to KTP Discord Relay will be documented in this file.
 - `relay-dev` skill: unauthenticated-endpoint rule corrected to `/health` **and**
   `/` — the README was already right.
 
-## [1.1.1] - 2026-07-18 (staged, not deployed)
+## [1.1.1] - 2026-07-18 (DEPLOYED 2026-08-09, Cloud Run revision `discord-relay-00036-vrl`)
+
+> ⚠️ **The "staged, not deployed" tag sat here for three weeks and was probably already wrong.**
+> Revision **`00035-xlg`** was deployed **2026-07-19**, the day after this code landed (`1b3f9c8`,
+> 07-18), so 1.1.1 was most likely already serving — while this changelog and the root
+> `CLAUDE.md` row both still pinned `00034-r54`. Redeployed 2026-08-09 to remove the doubt
+> rather than reason about it; `00036-vrl` is certain. **Verify a relay deploy by revision id,
+> not by a changelog tag.**
+>
+> Post-deploy checks, all four green: `/health` 200 · no `X-Relay-Auth` → 401 · authenticated
+> `/whoami` → 200 "KTP Score Bot" · removed debug endpoint → 404.
 
 `fetchWithRetries` hardening. No endpoint, auth, or response-shape changes — the
 `allowed_mentions` and `components` passthroughs are untouched.
