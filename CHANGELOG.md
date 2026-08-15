@@ -4,6 +4,24 @@ All notable changes to KTP Discord Relay will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **Dependency refresh — the four production advisories are real, not the
+  dev-only tree they were assumed to be.** `npm audit --omit=dev` (Node 24.19.0)
+  reported 4 (2 high, 2 moderate) against the *shipping* dependency set, plus 3
+  more in the `nodemon` tree that `npm ci --omit=dev` never installs. The
+  lockfile pins that were patched at the last review had since been overtaken by
+  newly published advisories: `path-to-regexp` 0.1.12 → **0.1.13**
+  (GHSA-37ch-88jc-xwx2, ReDoS), `qs` 6.13.0 → **6.15.3** (GHSA-w7fw-mjwx-w883,
+  GHSA-6rw7-vpxm-498p, GHSA-q8mj-m7cp-5q26), `body-parser` 1.20.3 → **1.20.6**
+  (GHSA-v422-hmwv-36x6, size limit silently disabled on an invalid `limit`), and
+  `express` 4.21.2 → **4.22.2**, which carries them. All resolved inside the
+  existing `^4.19.2` range, so `package.json` is unchanged and only the lockfile
+  moved; `npm audit` now reports 0 with and without `--omit=dev`. Server smoke
+  re-run on the new tree: `/` 200, `/health` 200, `/whoami` unauthenticated 401,
+  wrong secret 401, `/reactions` missing-params 400, unknown route 404.
+  ⚠️ A patched pin is a snapshot, not a state — re-run the audit rather than
+  reading the version list here.
+
 ### Documentation
 - README `/reply` row and Key Design Decisions now cover both load-bearing
   passthroughs: `allowed_mentions` (scoped — only `POST /reply` honors a caller
