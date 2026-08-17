@@ -4,6 +4,22 @@ All notable changes to KTP Discord Relay will be documented in this file.
 
 ## [Unreleased]
 
+> **DEPLOYED 2026-08-17 — Cloud Run revision `discord-relay-00037-6wd`, 100% of traffic.**
+> Rollback is a traffic split back to `discord-relay-00036-vrl` (seconds, no rebuild):
+> `gcloud run services update-traffic discord-relay --to-revisions discord-relay-00036-vrl=100 --region us-central1 --project ktp-score-bot`.
+>
+> The deploy is lockfile-only: `server.js` hashes to the same blob on both revisions,
+> re-derived from each revision's own Cloud Build source zip rather than from a tag.
+> `00036-vrl`'s zip carried `package-lock.json` with `path-to-regexp` 0.1.12 / `qs` 6.13.0 /
+> `body-parser` 1.20.3 / `express` 4.21.2 and audited 4 production advisories; `00037-6wd`'s
+> carries 0.1.13 / 6.15.3 / 1.20.6 / 4.22.2 and audits 0, with and without `--omit=dev`.
+>
+> `allowed_mentions` re-verified live afterwards by **difference**, gated on Discord's
+> returned message object rather than the relay's own 200: the same content sent with
+> `parse: []` came back with an empty `mentions` array and with `parse: ["users"]` came back
+> with the mention present. A relay that dropped the field would answer identically to both,
+> which a single success status cannot distinguish. Both probe messages were deleted.
+
 ### Security
 - **Dependency refresh — the four production advisories are real, not the
   dev-only tree they were assumed to be.** `npm audit --omit=dev` (Node 24.19.0)
