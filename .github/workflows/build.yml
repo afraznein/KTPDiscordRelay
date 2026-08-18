@@ -1,0 +1,81 @@
+# KTP Tier 1 — build gate for the Discord relay.
+#
+# Every KTP plugin posts through this service (plugin -> curl -> relay -> Discord
+# API), so it is a single point of failure for match announcements, admin audit,
+# AC alerts and score reporting. It had no CI at all.
+#
+# The load-bearing step is `docker build`: this service is deployed to Cloud Run
+# as a container, so the image IS the deploy artifact. A Dockerfile that no
+# longer builds is a failed deploy, and gcloud only runs from WSL on the
+# operator's box -- meaning that failure would otherwise surface by hand.
+#
+# ⚠️ NOT `paths:`-filtered, deliberately. If this ever becomes a required status
+# check, a filtered workflow is silently skipped on an unrelated PR, the check
+# never reports, and the branch cannot be merged.
+
+name: Tier 1 Build
+
+on:
+  # push only on the protected branch: `pull_request` is what reports on a PR,
+  # so firing on every branch push would run the same job twice.
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches both package.json `engines` (>=22) and the Dockerfile base
+          # image. Testing on a different major than the one that ships would
+          # make a green build say nothing about production.
+          node-version: '22'
+
+      - name: Install (lockfile integrity)
+        # `npm ci` is the same command the Dockerfile runs, and it fails if
+        # package-lock.json and package.json have drifted apart -- which would
+        # otherwise be discovered during an image build at deploy time.
+        run: npm ci
+
+      - name: Syntax check
+        run: node --check server.js
+
+      - name: Build the deploy image
+        # This is what Cloud Run actually runs. Building it here is the closest
+        # thing to a deploy rehearsal that CI can do without credentials.
+        run: docker build -t ktp-discord-relay:ci .
+
+      - name: Dependency audit
+        # Non-blocking on purpose. Advisories are externally controlled and
+        # time-dependent: one published upstream tomorrow would hard-fail every
+        # PR in this repo with no code change, which is the "required check that
+        # cannot pass" failure mode. Reported loudly instead.
+        if: always()
+        run: |
+          set -uo pipefail
+          OUT="$(npm audit --omit=dev 2>&1 || true)"
+          echo "$OUT"
+          if echo "$OUT" | grep -qE "found [1-9][0-9]* vulnerabilit"; then
+            {
+              echo "### :warning: Vulnerable dependencies"
+              echo
+              echo '```'
+              echo "$OUT" | tail -30
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::vulnerable npm package(s) present - see the job summary"
+          else
+            echo "no vulnerable production dependencies" >> "$GITHUB_STEP_SUMMARY"
+          fi
