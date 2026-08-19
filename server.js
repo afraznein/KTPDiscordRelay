@@ -10,6 +10,9 @@ const DISCORD_API = 'https://discord.com/api/v10';
 
 const DISCORD_BOT_TOKEN   = process.env.DISCORD_BOT_TOKEN || '';
 const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET || '';
+// Rotation window only: accepted alongside the primary so the 24 fleet instances
+// can migrate across a nightly. Unset it to close the window.
+const RELAY_LEGACY_SECRET = process.env.RELAY_LEGACY_SECRET || '';
 const PORT = process.env.PORT || 8080;
 
 const crypto = require('crypto');
@@ -38,13 +41,21 @@ function secretsMatch(a, b) {
   return crypto.timingSafeEqual(ha, hb);
 }
 
-// Simple shared-secret auth; fails closed when the secret is unset.
+// Simple shared-secret auth; fails closed when the primary secret is unset.
+// During a rotation RELAY_LEGACY_SECRET is also accepted, and every legacy hit is
+// logged -- that log going quiet is what makes the window closable. Without it,
+// dropping the old secret is a guess about whether every caller has migrated.
 function requireAuth(req, res, next) {
   const hdr = req.header('X-Relay-Auth') || '';
-  if (!RELAY_SHARED_SECRET || !secretsMatch(hdr, RELAY_SHARED_SECRET)) {
+  if (!RELAY_SHARED_SECRET) {
     return res.status(401).json({ error: 'unauthorized' });
   }
-  next();
+  if (secretsMatch(hdr, RELAY_SHARED_SECRET)) return next();
+  if (RELAY_LEGACY_SECRET && secretsMatch(hdr, RELAY_LEGACY_SECRET)) {
+    console.log(`[${ts()}] AUTH_LEGACY_SECRET_USED path=${req.path}`);
+    return next();
+  }
+  return res.status(401).json({ error: 'unauthorized' });
 }
 
 // Per-request ceiling so a hung Discord response can't hold a Cloud Run request
