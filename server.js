@@ -15,6 +15,32 @@ const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET || '';
 const RELAY_LEGACY_SECRET = process.env.RELAY_LEGACY_SECRET || '';
 const PORT = process.env.PORT || 8080;
 
+// DR5/DR4 — per-caller identity + ping-scoping. JSON array of
+// { id, secret, mentions: [...] }. `mentions` is the set of role/user IDs
+// that caller may pass in `allowed_mentions`; a caller not listed here (i.e.
+// still authenticating via RELAY_SHARED_SECRET or RELAY_LEGACY_SECRET) is a
+// "wildcard" caller and keeps today's unrestricted passthrough — that is the
+// grandfather clause for crashreporter @everyone, perf-rollup/fleet-health
+// role+user pings and AdminBot, none of which have been issued a key yet.
+let RELAY_KEYS = [];
+try {
+  const raw = process.env.RELAY_KEYS_JSON || '';
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      RELAY_KEYS = parsed.filter(k => k && typeof k.id === 'string' && typeof k.secret === 'string');
+    } else {
+      console.error(`${ts()} RELAY_KEYS_JSON is not an array, ignoring`);
+    }
+  }
+} catch (e) {
+  console.error(`${ts()} RELAY_KEYS_JSON invalid, ignoring: ${e.message}`);
+}
+
+// `mentions: null` marks a wildcard (unrestricted) caller.
+const WILDCARD_SHARED_CALLER = Object.freeze({ id: 'legacy-shared', mentions: null });
+const WILDCARD_LEGACY_CALLER = Object.freeze({ id: 'legacy-rotation', mentions: null });
+
 const crypto = require('crypto');
 
 // ---------- Utilities ----------
@@ -22,7 +48,7 @@ function ts() { return new Date().toISOString(); }
 function nowIso() { return ts(); } // keep compatibility
 
 function discordStyleUA() {
-  return 'DiscordBot (https://github.com/discord/discord-api-docs, v10) Relay/1.1.1';
+  return 'DiscordBot (https://github.com/discord/discord-api-docs, v10) Relay/1.2.0';
 }
 
 // Shared headers for Discord API
@@ -41,21 +67,52 @@ function secretsMatch(a, b) {
   return crypto.timingSafeEqual(ha, hb);
 }
 
-// Simple shared-secret auth; fails closed when the primary secret is unset.
-// During a rotation RELAY_LEGACY_SECRET is also accepted, and every legacy hit is
-// logged -- that log going quiet is what makes the window closable. Without it,
-// dropping the old secret is a guess about whether every caller has migrated.
+// Per-caller-key auth first (DR5/DR4), then the two wildcard secrets. Fails
+// closed when the primary secret is unset. During a rotation RELAY_LEGACY_SECRET
+// is also accepted, and every legacy hit is logged -- that log going quiet is
+// what makes the window closable. Without it, dropping the old secret is a
+// guess about whether every caller has migrated. That log line's exact text
+// (`AUTH_LEGACY_SECRET_USED path=...`) is unchanged here -- a separate,
+// already-in-flight rotation is watching for it verbatim.
 function requireAuth(req, res, next) {
   const hdr = req.header('X-Relay-Auth') || '';
   if (!RELAY_SHARED_SECRET) {
     return res.status(401).json({ error: 'unauthorized' });
   }
-  if (secretsMatch(hdr, RELAY_SHARED_SECRET)) return next();
+  for (const key of RELAY_KEYS) {
+    if (secretsMatch(hdr, key.secret)) {
+      req.caller = { id: key.id, mentions: Array.isArray(key.mentions) ? key.mentions.map(String) : [] };
+      console.log(`[${ts()}] AUTH_OK caller=${req.caller.id} path=${req.path}`);
+      return next();
+    }
+  }
+  if (secretsMatch(hdr, RELAY_SHARED_SECRET)) {
+    req.caller = WILDCARD_SHARED_CALLER;
+    console.log(`[${ts()}] AUTH_OK caller=${req.caller.id} path=${req.path}`);
+    return next();
+  }
   if (RELAY_LEGACY_SECRET && secretsMatch(hdr, RELAY_LEGACY_SECRET)) {
+    req.caller = WILDCARD_LEGACY_CALLER;
     console.log(`[${ts()}] AUTH_LEGACY_SECRET_USED path=${req.path}`);
     return next();
   }
   return res.status(401).json({ error: 'unauthorized' });
+}
+
+// DR5/DR4 — validate a caller-supplied `allowed_mentions` against that
+// caller's scope. A wildcard caller (mentions === null) is unrestricted, which
+// is what keeps crashreporter @everyone and the role/user pings working
+// unchanged until those consumers are issued their own keys. A scoped caller
+// may request only the role/user IDs on its own allowlist, and can never use
+// `parse: ["everyone"|"roles"|"users"]` to sidestep that list.
+function mentionsAllowed(caller, allowed_mentions) {
+  if (!caller || caller.mentions === null) return true;
+  if (!allowed_mentions || typeof allowed_mentions !== 'object') return true;
+  const roles = Array.isArray(allowed_mentions.roles) ? allowed_mentions.roles : [];
+  const users = Array.isArray(allowed_mentions.users) ? allowed_mentions.users : [];
+  const parseAll = Array.isArray(allowed_mentions.parse) ? allowed_mentions.parse : [];
+  if (parseAll.some(p => p === 'everyone' || p === 'roles' || p === 'users')) return false;
+  return [...roles, ...users].every(id => caller.mentions.includes(String(id)));
 }
 
 // Per-request ceiling so a hung Discord response can't hold a Cloud Run request
@@ -353,6 +410,9 @@ app.post('/reply', requireAuth, async (req, res) => {
   try {
     const { channelId, content, embeds, referenceMessageId, allowed_mentions, components } = req.body || {};
     if (!channelId) return res.status(400).json({ error: 'channelId required' });
+    if (allowed_mentions && !mentionsAllowed(req.caller, allowed_mentions)) {
+      return res.status(403).json({ error: 'mention_not_allowed', caller: req.caller && req.caller.id });
+    }
 
     const url = `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`;
 
@@ -460,21 +520,28 @@ app.post('/dm', requireAuth, async (req, res) => {
 // Body: { channelId, messageId, content?, embeds? }
 app.post('/edit', requireAuth, async (req, res) => {
   try {
-    const { channelId, messageId, content, embeds } = req.body || {};
+    const { channelId, messageId, content, embeds, allowed_mentions } = req.body || {};
     if (!channelId || !messageId) {
       return res.status(400).json({ error: 'channelId and messageId required' });
     }
     if (typeof content !== 'string' && !(Array.isArray(embeds) && embeds.length)) {
       return res.status(400).json({ error: 'nothing to edit (need content or embeds)' });
     }
+    if (allowed_mentions && !mentionsAllowed(req.caller, allowed_mentions)) {
+      return res.status(403).json({ error: 'mention_not_allowed', caller: req.caller && req.caller.id });
+    }
 
     const url = `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}`;
 
-    // For PATCH, omit fields that aren’t changing.
+    // For PATCH, omit fields that aren’t changing. Default stays strip-all
+    // (unchanged behavior); an explicit, scope-validated override opts in --
+    // additive, so a caller that never sends allowed_mentions is unaffected.
     const body = {
       ...(typeof content === 'string' ? { content: truncateSafe(content, 1900) } : {}),
       ...(Array.isArray(embeds) && embeds.length ? { embeds } : {}),
-      allowed_mentions: { parse: [] },
+      allowed_mentions: (allowed_mentions && typeof allowed_mentions === 'object')
+        ? allowed_mentions
+        : { parse: [] },
     };
 
     const r = await fetchWithRetries(
@@ -520,7 +587,11 @@ app.delete('/delete/:channelId/:messageId', requireAuth, async (req, res) => {
 // Root
 app.get('/', (_req, res) => res.status(200).send(`relay ok @ ${nowIso()}`));
 
-// Start
-app.listen(PORT, () => {
-  console.log(`${ts()} relay listening on :${PORT}`);
-});
+// Start (skipped when required as a module, e.g. by tests)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`${ts()} relay listening on :${PORT}`);
+  });
+}
+
+module.exports = { app, requireAuth, secretsMatch, mentionsAllowed };

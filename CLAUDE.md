@@ -65,6 +65,7 @@ gcloud run deploy discord-relay --source . --region us-central1 --project ktp-sc
 | Variable | Description |
 |----------|-------------|
 | `PORT` | Server port (default: 8080, Cloud Run sets this) |
+| `RELAY_KEYS_JSON` | DR5/DR4 per-caller identity + ping-scoping: JSON array of `{id, secret, mentions:[...]}`. Unmatched callers fall back to `RELAY_SHARED_SECRET`/`RELAY_LEGACY_SECRET` as unrestricted "wildcard" callers — see README § Key Design Decisions. |
 
 ## KTP Integration (consumers)
 - AMX plugins via `ktp_discord.inc` over KTPAmxxCurl (KTPMatchHandler, KTPCvarChecker, KTPFileChecker, KTPAdminAudit, KTPHLTVRecorder, ...)
@@ -77,7 +78,7 @@ gcloud run deploy discord-relay --source . --region us-central1 --project ktp-sc
 All authenticated endpoints require `X-Relay-Auth` header matching `RELAY_SHARED_SECRET`.
 
 ## Version
-Current: v1.1.1
+Current: v1.2.0
 
 ## SSH Access (for debugging/logs)
 

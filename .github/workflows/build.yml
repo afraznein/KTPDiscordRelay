@@ -52,6 +52,12 @@ jobs:
       - name: Syntax check
         run: node --check server.js
 
+      - name: Unit tests
+        # node:test built-in runner, no extra dependency. Covers auth
+        # (including the DR5/DR4 per-caller mention scoping) with global.fetch
+        # stubbed so the run makes no live call to Discord.
+        run: npm test
+
       - name: Build the deploy image
         # This is what Cloud Run actually runs. Building it here is the closest
         # thing to a deploy rehearsal that CI can do without credentials.
