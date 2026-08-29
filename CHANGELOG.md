@@ -4,6 +4,24 @@ All notable changes to KTP Discord Relay will be documented in this file.
 
 ## [Unreleased]
 
+> **DEPLOYED 2026-08-19 — Cloud Run revision `discord-relay-00038-scw`, 100% of traffic**
+> (re-verified serving 100% as `latestReadyRevision` on 2026-08-29 via
+> `gcloud run services describe`). This revision carries the dual-accept rotation
+> window below. Rollback is a traffic split back to `discord-relay-00037-6wd` —
+> but note that rolling back also rolls back dual-accept: callers still on the
+> legacy secret would 401, which is the exact outage the window exists to prevent.
+
+### Added
+- **`RELAY_LEGACY_SECRET` — a second accepted secret for the length of a rotation
+  window.** When set, `requireAuth` accepts it alongside `RELAY_SHARED_SECRET`
+  (both compared timing-safe) and logs `AUTH_LEGACY_SECRET_USED path=…` on every
+  legacy hit — that log going quiet is what makes the window closable; without it,
+  dropping the old secret is a guess about whether every caller has migrated.
+  When unset, behaviour is exactly as before, and with `RELAY_SHARED_SECRET`
+  unset every authenticated endpoint still 401s regardless of the legacy value.
+  Exists because the 24 fleet instances re-read their relay secret only on the
+  nightly restart, so a hard cutover would strand every caller for up to a day.
+
 > **DEPLOYED 2026-08-17 — Cloud Run revision `discord-relay-00037-6wd`, 100% of traffic.**
 > Rollback is a traffic split back to `discord-relay-00036-vrl` (seconds, no rebuild):
 > `gcloud run services update-traffic discord-relay --to-revisions discord-relay-00036-vrl=100 --region us-central1 --project ktp-score-bot`.
