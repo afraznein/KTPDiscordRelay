@@ -66,6 +66,7 @@ gcloud run deploy discord-relay --source . --region us-central1 --project ktp-sc
 |----------|-------------|
 | `PORT` | Server port (default: 8080, Cloud Run sets this) |
 | `RELAY_KEYS_JSON` | DR5/DR4 per-caller identity + ping-scoping: JSON array of `{id, secret, mentions:[...]}`. Unmatched callers fall back to `RELAY_SHARED_SECRET`/`RELAY_LEGACY_SECRET` as unrestricted "wildcard" callers — see README § Key Design Decisions. |
+| `RELAY_LEGACY_SECRET` | Rotation window only — a second accepted secret, logged as `AUTH_LEGACY_SECRET_USED` on every use. Unset it to close the window. |
 
 ## KTP Integration (consumers)
 - AMX plugins via `ktp_discord.inc` over KTPAmxxCurl (KTPMatchHandler, KTPCvarChecker, KTPFileChecker, KTPAdminAudit, KTPHLTVRecorder, ...)
@@ -75,7 +76,11 @@ gcloud run deploy discord-relay --source . --region us-central1 --project ktp-sc
 - KTPAdminBot - verdict embeds (relay delivers the Acknowledge button; the bot handles interactions on its own gateway)
 
 ## Authentication
-All authenticated endpoints require `X-Relay-Auth` header matching `RELAY_SHARED_SECRET`.
+All authenticated endpoints require an `X-Relay-Auth` header, compared **timing-safe**
+against `RELAY_SHARED_SECRET`. During a rotation window `RELAY_LEGACY_SECRET`, if set,
+is also accepted — every such request logs `AUTH_LEGACY_SECRET_USED path=…`, and that
+log going quiet is what makes the window safe to close. With `RELAY_SHARED_SECRET`
+unset, every authenticated endpoint 401s regardless of the legacy value.
 
 ## Version
 Current: v1.2.0

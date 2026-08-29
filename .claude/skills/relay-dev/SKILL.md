@@ -34,9 +34,12 @@ KTPInfrastructure monitors, Apps Script score bots, KTPAdminBot. Therefore:
   negotiation. Responses must stay simple JSON with stable shapes.
 
 ## Security rules
-- One shared secret (`X-Relay-Auth` vs `RELAY_SHARED_SECRET`) guards everything.
-  Every new endpoint MUST require it — use the existing **timing-safe compare**
-  helper in server.js, never `===`.
+- `X-Relay-Auth` guards everything. Every new endpoint MUST require it — use the
+  existing **timing-safe compare** helper in server.js, never `===`.
+  The primary secret is `RELAY_SHARED_SECRET`. A **second** secret,
+  `RELAY_LEGACY_SECRET`, is accepted while a rotation window is open and logs
+  `AUTH_LEGACY_SECRET_USED` on each use; it is unset to close the window. Do not
+  write code that assumes exactly one accepted secret.
 - No unauthenticated endpoints besides `/health` and `/` (root liveness). Debug/introspection endpoints
   without auth were removed in 1.1.0; don't reintroduce them.
 - The relay holds the bot token; nothing that echoes config/env may ship.
@@ -55,7 +58,7 @@ KTPInfrastructure monitors, Apps Script score bots, KTPAdminBot. Therefore:
 ## Deploy (gcloud is WSL-only on this box)
 `gcloud` does not exist in Windows PATH here — run it inside WSL:
 ```bash
-wsl bash -c "cd '/mnt/n/Nein_/KTP Git Projects/Discord Relay' && gcloud run deploy discord-relay --source . --region us-central1 --project ktp-score-bot"
+wsl bash -c "cd '/mnt/n/Nein_/KTP Git Projects/KTPDiscordRelay' && gcloud run deploy discord-relay --source . --region us-central1 --project ktp-score-bot"
 ```
 If auth is needed, `gcloud auth login` is interactive — have the operator run it
 (the `!` prefix in the prompt runs commands in-session), or use the FIFO

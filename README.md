@@ -90,6 +90,7 @@ All authenticated endpoints require `X-Relay-Auth` header.
 |----------|-------------|
 | `PORT` | Server port (default: 8080, Cloud Run sets this) |
 | `RELAY_KEYS_JSON` | DR5/DR4 per-caller identity. JSON array of `{id, secret, mentions:[...]}`. A caller matching one of these entries may only pass the listed role/user IDs in `allowed_mentions`. A caller still authenticating via `RELAY_SHARED_SECRET` (or, during a rotation, `RELAY_LEGACY_SECRET`) is unrestricted — see Key Design Decisions. |
+| `RELAY_LEGACY_SECRET` | **Rotation window only.** Accepted on `X-Relay-Auth` alongside `RELAY_SHARED_SECRET`, so fleet instances can migrate across a nightly restart. Each use logs `AUTH_LEGACY_SECRET_USED`; when that line goes quiet, every caller has migrated and the variable can be unset to close the window. Leave unset normally. |
 
 ### Client Configuration
 
