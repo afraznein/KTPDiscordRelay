@@ -2,7 +2,11 @@
 
 All notable changes to KTP Discord Relay will be documented in this file.
 
-## [1.2.0] - 2026-08-25
+## [1.2.0] - UNRELEASED
+
+> This entry read `2026-08-25` in an earlier revision, i.e. as shipped. It is not.
+> Production runs **1.1.1**. Give this a real date and the serving Cloud Run
+> revision when it deploys, matching the form the 1.1.1 entry below uses.
 
 ### Added
 - **DR5/DR4 — per-caller identity + ping-scoping.** `RELAY_KEYS_JSON` (JSON

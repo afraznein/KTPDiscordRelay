@@ -114,11 +114,17 @@ gcloud run deploy discord-relay \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars "RELAY_SHARED_SECRET=xxx,DISCORD_BOT_TOKEN=xxx" \
+  --update-env-vars "RELAY_SHARED_SECRET=xxx,DISCORD_BOT_TOKEN=xxx" \
   --memory 512Mi \
   --concurrency 80 \
   --timeout 300
 ```
+
+> ⛔ **`--update-env-vars`, never `--set-env-vars`.** `--set-env-vars` replaces the
+> WHOLE environment block, so it silently drops every variable not named on that
+> one line — including `RELAY_KEYS_JSON` and `DISCORD_BOT_TOKEN`. To remove a
+> single variable use `--remove-env-vars NAME`; after any env change, describe the
+> service and confirm the variables you did *not* touch are still present.
 
 ### Update
 

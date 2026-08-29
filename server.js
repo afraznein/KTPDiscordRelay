@@ -28,7 +28,19 @@ try {
   if (raw) {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      RELAY_KEYS = parsed.filter(k => k && typeof k.id === 'string' && typeof k.secret === 'string');
+      RELAY_KEYS = parsed.filter(k => {
+        if (!k || typeof k.id !== 'string' || typeof k.secret !== 'string') return false;
+        // typeof "" === 'string', so an empty secret passes a type check. A
+        // request with no X-Relay-Auth header also reads as '', and
+        // secretsMatch('', '') hashes two empty strings and compares equal --
+        // so one typo'd entry here would authenticate every anonymous caller.
+        // Drop it loudly; a silent drop hides the typo that caused it.
+        if (k.secret.length === 0) {
+          console.error(`${ts()} RELAY_KEYS_JSON entry id=${k.id} has an empty secret -- dropped`);
+          return false;
+        }
+        return true;
+      });
     } else {
       console.error(`${ts()} RELAY_KEYS_JSON is not an array, ignoring`);
     }
@@ -79,7 +91,15 @@ function requireAuth(req, res, next) {
   if (!RELAY_SHARED_SECRET) {
     return res.status(401).json({ error: 'unauthorized' });
   }
+  // An absent header arrives here as ''. Every comparison below hashes both
+  // sides, so '' matches any empty configured secret. Reject before comparing:
+  // the absence of a credential is not a credential. This is what makes the
+  // function fail closed regardless of what RELAY_KEYS_JSON contains.
+  if (!hdr) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
   for (const key of RELAY_KEYS) {
+    if (!key.secret) continue;
     if (secretsMatch(hdr, key.secret)) {
       req.caller = { id: key.id, mentions: Array.isArray(key.mentions) ? key.mentions.map(String) : [] };
       console.log(`[${ts()}] AUTH_OK caller=${req.caller.id} path=${req.path}`);
@@ -106,8 +126,15 @@ function requireAuth(req, res, next) {
 // may request only the role/user IDs on its own allowlist, and can never use
 // `parse: ["everyone"|"roles"|"users"]` to sidestep that list.
 function mentionsAllowed(caller, allowed_mentions) {
-  if (!caller || caller.mentions === null) return true;
+  // Unknown caller denies. Only reachable if a route forgets requireAuth --
+  // defaulting to "allowed" would make that mistake silent.
+  if (!caller) return false;
+  if (caller.mentions === null) return true;
   if (!allowed_mentions || typeof allowed_mentions !== 'object') return true;
+  // replied_user pings the author of the referenced message, who is never on
+  // the caller's role/user allowlist -- so checking roles/users/parse alone
+  // leaves a ping a scoped caller can always reach.
+  if (allowed_mentions.replied_user === true) return false;
   const roles = Array.isArray(allowed_mentions.roles) ? allowed_mentions.roles : [];
   const users = Array.isArray(allowed_mentions.users) ? allowed_mentions.users : [];
   const parseAll = Array.isArray(allowed_mentions.parse) ? allowed_mentions.parse : [];
