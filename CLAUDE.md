@@ -65,6 +65,7 @@ gcloud run deploy discord-relay --source . --region us-central1 --project ktp-sc
 | Variable | Description |
 |----------|-------------|
 | `PORT` | Server port (default: 8080, Cloud Run sets this) |
+| `RELAY_KEYS_JSON` | DR5/DR4 per-caller identity + ping-scoping: JSON array of `{id, secret, mentions:[...]}`. Unmatched callers fall back to `RELAY_SHARED_SECRET`/`RELAY_LEGACY_SECRET` as unrestricted "wildcard" callers — see README § Key Design Decisions. |
 | `RELAY_LEGACY_SECRET` | Rotation window only — a second accepted secret, logged as `AUTH_LEGACY_SECRET_USED` on every use. Unset it to close the window. |
 
 ## KTP Integration (consumers)
@@ -82,7 +83,7 @@ log going quiet is what makes the window safe to close. With `RELAY_SHARED_SECRE
 unset, every authenticated endpoint 401s regardless of the legacy value.
 
 ## Version
-Current: v1.1.1
+Current: v1.2.0
 
 ## SSH Access (for debugging/logs)
 

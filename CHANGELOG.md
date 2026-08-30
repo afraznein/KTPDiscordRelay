@@ -2,6 +2,41 @@
 
 All notable changes to KTP Discord Relay will be documented in this file.
 
+## [1.2.0] - UNRELEASED
+
+> This entry read `2026-08-25` in an earlier revision, i.e. as shipped. It is not.
+> Production runs **1.1.1**. Give this a real date and the serving Cloud Run
+> revision when it deploys, matching the form the 1.1.1 entry below uses.
+
+### Added
+- **DR5/DR4 — per-caller identity + ping-scoping.** `RELAY_KEYS_JSON` (JSON
+  array of `{id, secret, mentions:[...]}`) replaces the single shared secret
+  with per-caller keys: `requireAuth` timing-safe-matches against every
+  configured key and sets `req.caller`, `POST /reply` and `POST /edit` reject
+  an `allowed_mentions` naming a role/user ID outside that caller's list
+  (403, before the request reaches Discord) — including an attempt to
+  sidestep the list via `parse:["everyone"|"roles"|"users"]`. Every
+  authenticated request now logs `caller.id`.
+  ⛔ **Dual-mode rollout, nothing migrated yet.** A caller still
+  authenticating via `RELAY_SHARED_SECRET` or `RELAY_LEGACY_SECRET` is a
+  "wildcard" caller (`mentions: null`) with the prior unrestricted
+  passthrough — this grandfathers crashreporter `@everyone`, perf-rollup and
+  fleet-health role/user pings, and AdminBot exactly as before. No consumer
+  config changed in this release; issuing individual keys and threading them
+  through each consumer is follow-up work. Revoking a caller is dropping its
+  `RELAY_KEYS_JSON` entry and redeploying.
+  ⚠️ `RELAY_LEGACY_SECRET`'s existing `AUTH_LEGACY_SECRET_USED` log line is
+  byte-for-byte unchanged — a separate, already-in-flight secret rotation
+  (deferred to 2026-08-28) watches that text verbatim.
+  `POST /edit` gained an optional `allowed_mentions` field (previously always
+  hardcoded to strip); omitting it keeps today's behavior.
+- `test/auth.test.js` — `node:test` coverage for the above (11 cases): auth
+  still 401s with no/wrong header, a scoped caller's in-scope mention reaches
+  Discord, an out-of-scope role/`parse:["everyone"]` 403s and never reaches
+  Discord (checked on both `/reply` and `/edit`), and both wildcard callers
+  keep unrestricted passthrough. `global.fetch` is stubbed so the suite makes
+  no live Discord call. `npm test` runs it; wired into `Tier 1 Build` CI.
+
 ## [Unreleased]
 
 > **DEPLOYED 2026-08-19 — Cloud Run revision `discord-relay-00038-scw`, 100% of traffic**

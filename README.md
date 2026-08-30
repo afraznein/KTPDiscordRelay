@@ -1,6 +1,6 @@
 # KTP Discord Relay
 
-**Version 1.1.1** | HTTP relay service for KTP competitive infrastructure to Discord API
+**Version 1.2.0** | HTTP relay service for KTP competitive infrastructure to Discord API
 
 A Node.js/Express HTTP relay that forwards requests from KTP services to the Discord API V10. Stateless proxy deployed on Google Cloud Run that handles authentication, retry logic, and rate limiting.
 
@@ -61,7 +61,7 @@ All authenticated endpoints require `X-Relay-Auth` header.
 | `POST /reply` | Yes | Send message to channel (supports embeds, replies, `allowed_mentions`, `components`) |
 | `GET /messages` | Yes | List channel messages (paginated) |
 | `GET /message/:channelId/:messageId` | Yes | Get specific message |
-| `POST /edit` | Yes | Edit existing message |
+| `POST /edit` | Yes | Edit existing message (optional scoped `allowed_mentions`) |
 | `DELETE /delete/:channelId/:messageId` | Yes | Delete message |
 | `POST /dm` | Yes | Send direct message to user |
 
@@ -89,6 +89,7 @@ All authenticated endpoints require `X-Relay-Auth` header.
 | Variable | Description |
 |----------|-------------|
 | `PORT` | Server port (default: 8080, Cloud Run sets this) |
+| `RELAY_KEYS_JSON` | DR5/DR4 per-caller identity. JSON array of `{id, secret, mentions:[...]}`. A caller matching one of these entries may only pass the listed role/user IDs in `allowed_mentions`. A caller still authenticating via `RELAY_SHARED_SECRET` (or, during a rotation, `RELAY_LEGACY_SECRET`) is unrestricted — see Key Design Decisions. |
 | `RELAY_LEGACY_SECRET` | **Rotation window only.** Accepted on `X-Relay-Auth` alongside `RELAY_SHARED_SECRET`, so fleet instances can migrate across a nightly restart. Each use logs `AUTH_LEGACY_SECRET_USED`; when that line goes quiet, every caller has migrated and the variable can be unset to close the window. Leave unset normally. |
 
 ### Client Configuration
@@ -113,11 +114,17 @@ gcloud run deploy discord-relay \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars "RELAY_SHARED_SECRET=xxx,DISCORD_BOT_TOKEN=xxx" \
+  --update-env-vars "RELAY_SHARED_SECRET=xxx,DISCORD_BOT_TOKEN=xxx" \
   --memory 512Mi \
   --concurrency 80 \
   --timeout 300
 ```
+
+> ⛔ **`--update-env-vars`, never `--set-env-vars`.** `--set-env-vars` replaces the
+> WHOLE environment block, so it silently drops every variable not named on that
+> one line — including `RELAY_KEYS_JSON` and `DISCORD_BOT_TOKEN`. To remove a
+> single variable use `--remove-env-vars NAME`; after any env change, describe the
+> service and confirm the variables you did *not* touch are still present.
 
 ### Update
 
@@ -139,7 +146,8 @@ gcloud beta run services logs tail discord-relay --region us-central1 --project 
 
 - **Stateless** - Each request is independent, scales to zero
 - **Retry with backoff** - Honors Discord `Retry-After` headers, exponential backoff, capped at 60s. `429` retries on every method; a 5xx or transport error on a write (`POST`/`PATCH`) is terminal and surfaced, never resent — the write may already have committed. Each outbound request carries a 10s timeout.
-- **Mentions stripped by default** - outgoing messages default to `allowed_mentions: { parse: [] }`; callers may pass an explicit `allowed_mentions` on `POST /reply` to opt in (used by the crash reporter, perf rollup, fleet health, and admin-bot verdict embeds). `POST /edit` always strips mentions; `/dm` sends none.
+- **Mentions stripped by default** - outgoing messages default to `allowed_mentions: { parse: [] }`; callers may pass an explicit `allowed_mentions` on `POST /reply` or `POST /edit` to opt in (used by the crash reporter, perf rollup, fleet health, and admin-bot verdict embeds). `/dm` sends none.
+- **Per-caller identity + ping scoping (DR5/DR4)** - `RELAY_KEYS_JSON` lets each caller carry its own secret and its own allowlist of role/user IDs; `requireAuth` sets `req.caller` from whichever key matched, and `POST /reply` / `POST /edit` reject an `allowed_mentions` that names an ID outside that caller's list (403, before the request ever reaches Discord) — including a `parse:["everyone"|"roles"|"users"]` attempt to sidestep the list. A caller still authenticating via `RELAY_SHARED_SECRET` (or `RELAY_LEGACY_SECRET` during a rotation window) is a "wildcard" caller and keeps the unrestricted passthrough above — that grandfathers today's crashreporter `@everyone`, perf-rollup/fleet-health pings and AdminBot until each is issued its own key. Every authenticated request logs `caller.id`.
 - **Interactive components passthrough** - `POST /reply` forwards an optional `components` array (action rows with buttons/selects); this is what delivers the KTPAdminBot Acknowledge button. The relay only delivers the component — KTPAdminBot handles the resulting interactions on its own gateway.
 - **Content truncation** - Messages capped at 1900 chars (Discord limit is 2000)
 - **Emoji cache** - In-memory 60s TTL for guild emoji lookups
