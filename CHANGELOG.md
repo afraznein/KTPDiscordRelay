@@ -36,6 +36,23 @@ All notable changes to KTP Discord Relay will be documented in this file.
   Discord (checked on both `/reply` and `/edit`), and both wildcard callers
   keep unrestricted passthrough. `global.fetch` is stubbed so the suite makes
   no live Discord call. `npm test` runs it; wired into `Tier 1 Build` CI.
+- **`POST /thread` — create a thread.** `{ channelId, name, messageId?,
+  autoArchiveDuration? }`. With `messageId` the thread starts from that message
+  (`/channels/{c}/messages/{m}/threads`); without it a public thread (type 11)
+  starts on the channel (`/channels/{c}/threads`). Discord's channel object is
+  returned as-is, so the caller reads the thread id from `id` and then uses the
+  existing `POST /reply` / `POST /react` with that id as `channelId` — a thread
+  is a channel, and no second message or reaction route was needed. The name is
+  cut at Discord's 100-character cap without splitting a surrogate pair;
+  `autoArchiveDuration` is validated against Discord's four values (60, 1440,
+  4320, 10080) here rather than at the edge. Nothing here pings: mentions belong
+  to the message posted into the thread afterwards, which goes through `/reply`'s
+  per-caller `allowed_mentions` scoping unchanged. Additive — no existing
+  endpoint, field, or auth behaviour changes. First consumer: ktpleague.gg's
+  mid-season roster window, one vote thread per roster change that needs admin
+  approval (`searse/keep-the-prac`, feat/mid-season-roster-window).
+  `test/thread.test.js` covers auth, both Discord routes, the 400s, and the
+  100-char cut with a stubbed `fetch`.
 
 ## [Unreleased]
 
