@@ -64,6 +64,7 @@ All authenticated endpoints require `X-Relay-Auth` header.
 | `POST /edit` | Yes | Edit existing message (optional scoped `allowed_mentions`) |
 | `DELETE /delete/:channelId/:messageId` | Yes | Delete message |
 | `POST /dm` | Yes | Send direct message to user |
+| `POST /thread` | Yes | Create a thread on a channel (`{ channelId, name, messageId?, autoArchiveDuration? }`). With `messageId` the thread starts from that message; without it a public thread starts on the channel. Returns Discord's channel object — its `id` is the thread id, which `POST /reply` and `POST /react` then accept as `channelId`. Never pings by itself. |
 
 ### Reactions & Channels
 

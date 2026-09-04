@@ -478,6 +478,72 @@ app.post('/reply', requireAuth, async (req, res) => {
   }
 });
 
+// Create a thread
+// POST /thread
+// Body: { channelId, name, messageId?, autoArchiveDuration? }
+//
+// With `messageId` the thread is started FROM that message
+// (POST /channels/{c}/messages/{m}/threads); without it a public thread is
+// started on the channel (POST /channels/{c}/threads, type 11). Either way
+// the response is Discord's channel object, whose `id` is the thread id —
+// and a thread is a channel, so the caller posts into it with POST /reply
+// using that id as `channelId`, and reacts with POST /react the same way.
+//
+// `autoArchiveDuration` is minutes and must be one of Discord's four values
+// (60, 1440, 4320, 10080); anything else is refused here rather than at
+// Discord's edge, and omitting it leaves Discord's default (1440).
+//
+// Additive: no existing endpoint changes. First consumer is ktpleague.gg's
+// mid-season roster window, which opens one vote thread per roster change
+// that needs admin approval. Nothing here pings — mentions belong to the
+// message posted afterwards, and go through /reply's allowed_mentions scoping.
+const THREAD_ARCHIVE_MINUTES = new Set([60, 1440, 4320, 10080]);
+const PUBLIC_THREAD = 11;
+
+app.post('/thread', requireAuth, async (req, res) => {
+  try {
+    const { channelId, name, messageId, autoArchiveDuration } = req.body || {};
+    if (!channelId || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'channelId and name required' });
+    }
+    if (autoArchiveDuration !== undefined && !THREAD_ARCHIVE_MINUTES.has(Number(autoArchiveDuration))) {
+      return res.status(400).json({ error: 'autoArchiveDuration must be one of 60, 1440, 4320, 10080' });
+    }
+
+    const url = messageId
+      ? `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}/threads`
+      : `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/threads`;
+
+    // Discord caps a thread name at 100 characters and truncates silently;
+    // cutting here keeps a surrogate pair whole.
+    const body = {
+      name: truncateSafe(name.trim(), 100),
+      ...(autoArchiveDuration !== undefined ? { auto_archive_duration: Number(autoArchiveDuration) } : {}),
+      ...(messageId ? {} : { type: PUBLIC_THREAD }),
+    };
+
+    const r = await fetchWithRetries(
+      url,
+      { method: 'POST', headers: BASE_HEADERS, body: JSON.stringify(body) },
+      { retries: 2, backoffMs: 600 }
+    );
+
+    const text = await r.text();
+    if (r.status >= 300) {
+      console.error(`${ts()} POST /thread error`, {
+        status: r.status,
+        channelId,
+        messageId: messageId || null,
+        body: text?.slice(0, 500),
+      });
+    }
+    res.status(r.status).type('application/json').send(text);
+  } catch (e) {
+    console.error(`${ts()} POST /thread relay error:`, e);
+    res.status(500).json({ error: 'relay_error', detail: String(e) });
+  }
+});
+
 // Add reaction
 app.post('/react', requireAuth, async (req, res) => {
   try {
