@@ -6,6 +6,9 @@
 
 **REQUIRED: Before modifying or deploying this service, invoke the `relay-dev` skill** (`.claude/skills/relay-dev/SKILL.md`). It carries the load-bearing passthroughs, compatibility contract, and deploy/verify checklist; do not edit server.js without it loaded.
 
+**A design that ships as a document is NOT done** — every proposal in a docs-only PR becomes a
+tracked board item in the same act (operator ruling 2026-09-14). See `DESIGN_DOCS_ARE_NOT_DONE.md`.
+
 ## Overview
 Node.js/Express bot-token relay for the Discord API — send/edit/delete/read
 messages, add/list reactions, and send DMs on behalf of KTP services that can't
