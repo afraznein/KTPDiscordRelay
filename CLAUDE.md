@@ -46,6 +46,12 @@ between revisions:
 gcloud run deploy discord-relay --source . --region us-central1 --project ktp-score-bot
 ```
 
+⚠️ **The service runs with `--min-instances=1`** (since revision `00041-qll`, 2026-09-29). With scale-to-zero, the first
+burst after 15–20 minutes of fleet-wide quiet hit a cold container, and the plugins' 3 s `/health` prewarm timed out on
+every host in the same second. Keep it at 1, and do not "fix" timeouts by adding a plugin-side retry or raising
+plugin timeouts: a `/health` retry adds cold-start load, and the relay deliberately never resends a POST. The cost is
+one always-on instance; rollback is `--min-instances=0`.
+
 ## Key Endpoints
 | Endpoint | Description |
 |----------|-------------|
